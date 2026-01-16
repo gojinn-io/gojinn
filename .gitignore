@@ -1,4 +1,5 @@
 # Binaries
+Caddy-reactor
 *.exe
 *.dll
 *.so
