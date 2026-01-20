@@ -8,18 +8,18 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.uber.org/zap"
-
 	"github.com/dustin/go-humanize"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -27,8 +27,15 @@ func init() {
 	httpcaddyfile.RegisterHandlerDirective("gojinn", parseCaddyfile)
 }
 
+// --- PHASE 3 OPTIMIZATION: BUFFER POOL ---
+// Reduce Garbage Collector pressure by reusing memory buffers for stdout.
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		return new(bytes.Buffer)
+	},
+}
+
 // gojinnMetrics holds the initialized Prometheus metrics.
-// We store them in the struct to handle Caddy reloads correctly.
 type gojinnMetrics struct {
 	duration *prometheus.HistogramVec
 	active   *prometheus.GaugeVec
@@ -42,9 +49,9 @@ type Gojinn struct {
 	MemoryLimit string            `json:"memory_limit,omitempty"`
 
 	logger  *zap.Logger
-	code    wazero.CompiledModule
-	engine  wazero.Runtime
-	metrics *gojinnMetrics // Metrics are stored here, not globally
+	code    wazero.CompiledModule // JIT Cache: Pre-compiled code
+	engine  wazero.Runtime        // JIT Cache: Shared runtime
+	metrics *gojinnMetrics
 }
 
 func (Gojinn) CaddyModule() caddy.ModuleInfo {
@@ -54,22 +61,20 @@ func (Gojinn) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// Provision initializes the module. In Phase 3, we compile the WASM here (Hot Path).
 func (r *Gojinn) Provision(ctx caddy.Context) error {
 	r.logger = ctx.Logger()
 
-	// --- METRICS REGISTRATION (CADDY WAY) ---
-	// Get Caddy's internal metrics registry to ensure scope isolation
+	// --- METRICS REGISTRATION ---
 	registry := ctx.GetMetricsRegistry()
 	r.metrics = &gojinnMetrics{}
 
-	// 1. Define Histogram
 	duration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "gojinn_function_duration_seconds",
 		Help:    "Time taken to execute the WASM function",
 		Buckets: prometheus.DefBuckets,
 	}, []string{"path", "status"})
 
-	// Try to register. If already registered (e.g., during reload), recover the existing collector.
 	if err := registry.Register(duration); err != nil {
 		if are, ok := err.(prometheus.AlreadyRegisteredError); ok {
 			r.metrics.duration = are.ExistingCollector.(*prometheus.HistogramVec)
@@ -80,7 +85,6 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 		r.metrics.duration = duration
 	}
 
-	// 2. Define Gauge
 	active := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "gojinn_active_sandboxes",
 		Help: "Number of WASM sandboxes currently running",
@@ -95,8 +99,8 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 	} else {
 		r.metrics.active = active
 	}
-	// ---------------------------------------------------
 
+	// --- RUNTIME CONFIGURATION ---
 	if r.Path == "" {
 		return fmt.Errorf("wasm file path is required")
 	}
@@ -104,6 +108,7 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 	ctxWazero := context.Background()
 	rConfig := wazero.NewRuntimeConfig().WithCloseOnContextDone(true)
 
+	// Memory Limits
 	if r.MemoryLimit != "" {
 		bytes, err := humanize.ParseBytes(r.MemoryLimit)
 		if err != nil {
@@ -119,10 +124,10 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 		}
 	}
 
+	// Create Shared Runtime (Singleton per route)
 	r.engine = wazero.NewRuntimeWithConfig(ctxWazero, rConfig)
 
-	// Host Module for Logs
-	// Allows guest WASM to call host_log(level, ptr, size)
+	// Host Module for Logs (host_log)
 	_, err := r.engine.NewHostModuleBuilder("gojinn").
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
@@ -158,6 +163,8 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 
 	wasi_snapshot_preview1.MustInstantiate(ctxWazero, r.engine)
 
+	// --- PHASE 3: JIT CACHING (PRE-COMPILATION) ---
+	r.logger.Info("compiling wasm module...", zap.String("path", r.Path))
 	wasmBytes, err := os.ReadFile(r.Path)
 	if err != nil {
 		return fmt.Errorf("failed to read wasm file: %w", err)
@@ -167,6 +174,7 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to compile wasm binary: %w", err)
 	}
+	r.logger.Info("wasm module compiled and cached", zap.String("path", r.Path))
 
 	if r.Timeout == 0 {
 		r.Timeout = caddy.Duration(60 * time.Second)
@@ -177,6 +185,7 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 
 func (r *Gojinn) Cleanup() error {
 	if r.engine != nil {
+		r.logger.Info("closing gojinn runtime", zap.String("path", r.Path))
 		return r.engine.Close(context.Background())
 	}
 	return nil
@@ -185,19 +194,18 @@ func (r *Gojinn) Cleanup() error {
 func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddyhttp.Handler) error {
 	start := time.Now()
 
-	// Increment active sandboxes metric
 	r.metrics.active.WithLabelValues(r.Path).Inc()
 	defer r.metrics.active.WithLabelValues(r.Path).Dec()
 
 	ctx, cancel := context.WithTimeout(req.Context(), time.Duration(r.Timeout))
 	defer cancel()
 
+	// --- INPUT PREPARATION ---
 	bodyBytes, err := io.ReadAll(req.Body)
 	if err != nil {
 		return err
 	}
 
-	// Distributed Tracing Injection
 	traceID := req.Header.Get("traceparent")
 	if traceID == "" {
 		traceID = req.Header.Get("X-Request-Id")
@@ -223,10 +231,14 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 		return caddyhttp.Error(http.StatusInternalServerError, err)
 	}
 
-	var stdoutBuf bytes.Buffer
+	// --- PHASE 3: BUFFER POOLING ---
+	// Get buffer from pool to avoid GC overhead
+	stdoutBuf := bufferPool.Get().(*bytes.Buffer)
+	stdoutBuf.Reset()               // Essential: Clear previous data
+	defer bufferPool.Put(stdoutBuf) // Return to pool after function ends
 
 	config := wazero.NewModuleConfig().
-		WithStdout(&stdoutBuf).
+		WithStdout(stdoutBuf). // Use the pooled buffer
 		WithStderr(os.Stderr).
 		WithStdin(bytes.NewReader(inputJSON)).
 		WithArgs(r.Args...)
@@ -235,6 +247,7 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 		config = config.WithEnv(k, v)
 	}
 
+	// --- FAST INSTANTIATION (NO COMPILATION) ---
 	instance, err := r.engine.InstantiateModule(ctx, r.code, config)
 
 	duration := time.Since(start).Seconds()
@@ -244,24 +257,23 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 		statusLabel = "500"
 		if ctx.Err() == context.DeadlineExceeded {
 			statusLabel = "504"
-			// Record timeout metric
 			r.metrics.duration.WithLabelValues(r.Path, statusLabel).Observe(duration)
 			return caddyhttp.Error(http.StatusGatewayTimeout, fmt.Errorf("execution time limit exceeded"))
 		}
-		// Record error metric
 		r.metrics.duration.WithLabelValues(r.Path, statusLabel).Observe(duration)
 		r.logger.Error("wasm execution failed", zap.Error(err))
 		return caddyhttp.Error(http.StatusInternalServerError, err)
 	}
-	defer instance.Close(ctx)
+	defer instance.Close(ctx) // Only close the instance, keep runtime alive
 
 	if stdoutBuf.Len() == 0 {
 		statusLabel = "500"
 		r.metrics.duration.WithLabelValues(r.Path, statusLabel).Observe(duration)
-		r.logger.Error("wasm returned empty response (crashed?)")
-		return caddyhttp.Error(http.StatusInternalServerError, fmt.Errorf("wasm module crashed or returned no data"))
+		r.logger.Error("wasm returned empty response")
+		return caddyhttp.Error(http.StatusInternalServerError, fmt.Errorf("wasm module returned no data"))
 	}
 
+	// --- OUTPUT PROCESSING ---
 	var respPayload struct {
 		Status  int                 `json:"status"`
 		Headers map[string][]string `json:"headers"`
@@ -277,22 +289,21 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 		return caddyhttp.Error(http.StatusBadGateway, fmt.Errorf("wasm returned invalid protocol json"))
 	}
 
-	statusLabel = fmt.Sprintf("%d", respPayload.Status)
+	// Normalize Status Code
 	if respPayload.Status == 0 {
-		statusLabel = "200"
+		respPayload.Status = 200
 	}
+	statusLabel = fmt.Sprintf("%d", respPayload.Status)
 	r.metrics.duration.WithLabelValues(r.Path, statusLabel).Observe(duration)
 
+	// Set Headers
 	for k, v := range respPayload.Headers {
 		for _, val := range v {
 			rw.Header().Add(k, val)
 		}
 	}
 
-	if respPayload.Status == 0 {
-		respPayload.Status = 200
-	}
-
+	// Write Response
 	rw.WriteHeader(respPayload.Status)
 	rw.Write([]byte(respPayload.Body))
 

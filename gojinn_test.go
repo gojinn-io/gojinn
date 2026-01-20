@@ -25,6 +25,7 @@ func compileTestWasm(t *testing.T, sourceCode, outName string) string {
 	}
 
 	// Compiles using go build
+	// Ensures we target the correct WASI interface
 	cmd := exec.Command("go", "build", "-o", wasmPath, srcPath)
 	cmd.Env = append(os.Environ(), "GOOS=wasip1", "GOARCH=wasm")
 	out, err := cmd.CombinedOutput()
@@ -35,7 +36,7 @@ func compileTestWasm(t *testing.T, sourceCode, outName string) string {
 	return wasmPath
 }
 
-func TestProvision_ValidatesConfig(t *testing.T) {
+func TestProvision_ValidatesConfigAndCompiles(t *testing.T) {
 	// Minimal Go code for a valid WASM binary
 	code := `package main; func main() {}`
 	wasmPath := compileTestWasm(t, code, "empty.wasm")
@@ -51,14 +52,24 @@ func TestProvision_ValidatesConfig(t *testing.T) {
 	// which is required for our Provision method to succeed.
 	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
 
-	// Should pass without error
+	// Execution
 	err := r.Provision(ctx)
+
+	// Assertions
 	assert.NoError(t, err)
-	assert.NotNil(t, r.engine)
+
+	// Phase 3 Checks:
+	assert.NotNil(t, r.engine, "Wazero runtime (engine) should be initialized")
+	assert.NotNil(t, r.code, "WASM module (code) should be pre-compiled (JIT)")
 	assert.NotNil(t, r.metrics, "Metrics struct should be initialized")
+
+	// Cleanup
+	_ = r.Cleanup()
 }
 
 func TestProvision_InvalidMemoryLimit(t *testing.T) {
+	// Even for invalid config, we need a valid file because the file check happens first/early
+	// depending on logic order, but good practice to have it.
 	code := `package main; func main() {}`
 	wasmPath := compileTestWasm(t, code, "empty.wasm")
 
@@ -84,4 +95,6 @@ func TestProvision_FileNotFound(t *testing.T) {
 
 	err := r.Provision(ctx)
 	assert.Error(t, err)
+	// We might check for specific error message about reading file
+	assert.Contains(t, err.Error(), "failed to read wasm file")
 }
