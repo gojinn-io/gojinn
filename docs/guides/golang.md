@@ -12,83 +12,90 @@ To avoid deserialization errors, we recommend copying and maintaining these base
 package main
 
 import (
-	"encoding/json"
-	"fmt"
-	"io"
-	"os"
+    "encoding/json"
+    "fmt"
+    "io"
+    "os"
 )
 
 // --- 1. Gojinn Structures (The Contract) ---
 
-// Input Wrapper
+// Input Wrapper (Request)
 type GojinnRequest struct {
-	Method  string              `json:"method"`
-	Headers map[string][]string `json:"headers"`
-	Body    string              `json:"body"` // User payload comes here as a string
+    Method  string              `json:"method"`
+    URI     string              `json:"uri"`
+    Headers map[string][]string `json:"headers"`
+    Body    string              `json:"body"`     // User payload comes here as a string
+    TraceID string              `json:"trace_id"` // Distributed Tracing ID from Caddy
 }
 
-// Output Wrapper
+// Output Wrapper (Response)
 type GojinnResponse struct {
-	Status  int                 `json:"status"`
-	Headers map[string][]string `json:"headers"`
-	Body    string              `json:"body"`
+    Status  int                 `json:"status"`
+    Headers map[string][]string `json:"headers"`
+    Body    string              `json:"body"`
 }
 
-// --- 2. Your Data Structures ---
+// --- 2. Your Business Logic ---
 
 type MyUserPayload struct {
-	Name  string `json:"name"`
-	Email string `json:"email"`
+    Name  string `json:"name"`
+    Email string `json:"email"`
 }
 
 func main() {
-	// A. Read Input (Stdin)
-	inputBytes, err := io.ReadAll(os.Stdin)
-	if err != nil {
-		replyError(500, "Failed to read stdin")
-		return
-	}
+    // We delegate logic to 'run' to make it testable
+    if err := run(os.Stdin, os.Stdout); err != nil {
+        fmt.Fprintf(os.Stderr, "Fatal error: %v\n", err)
+        os.Exit(1)
+    }
+}
 
-	// B. Unwrap Gojinn Request
-	var req GojinnRequest
-	if err := json.Unmarshal(inputBytes, &req); err != nil {
-		replyError(400, "Invalid input format")
-		return
-	}
+// run contains the core logic. It takes interfaces, so it can be tested easily.
+func run(in io.Reader, out io.Writer) error {
+    // A. Decode Input
+    var req GojinnRequest
+    if err := json.NewDecoder(in).Decode(&req); err != nil {
+        return replyError(out, 400, "Invalid JSON input")
+    }
 
-	// C. Process your Payload (which was inside the Body string)
-	var payload MyUserPayload
-	// Tip: If body is empty, handle that!
-	if req.Body != "" {
-		json.Unmarshal([]byte(req.Body), &payload)
-	}
+    // B. Logs & Tracing (Use Stderr)
+    // Always include TraceID in logs to correlate with Caddy logs
+    fmt.Fprintf(os.Stderr, "[%s] Processing request for URI: %s\n", req.TraceID, req.URI)
 
-	// D. Business Logic (Logs go to Stderr)
-	fmt.Fprintf(os.Stderr, "Processing user: %s\n", payload.Name)
+    // C. Process your Payload
+    var payload MyUserPayload
+    if req.Body != "" {
+        if err := json.Unmarshal([]byte(req.Body), &payload); err != nil {
+             return replyError(out, 400, "Invalid user payload")
+        }
+    }
 
-	// E. Respond
-	responseData := map[string]string{"message": "Processed successfully"}
-	responseJSON, _ := json.Marshal(responseData)
+    // D. Respond
+    responseData := map[string]string{
+        "message": fmt.Sprintf("Hello, %s!", payload.Name),
+        "trace":   req.TraceID,
+    }
+    responseJSON, _ := json.Marshal(responseData)
 
-	reply(200, string(responseJSON))
+    return reply(out, 200, string(responseJSON))
 }
 
 // Helpers
-func reply(status int, body string) {
-	resp := GojinnResponse{
-		Status: status,
-		Headers: map[string][]string{
-			"Content-Type": {"application/json"},
-		},
-		Body: body,
-	}
-	json.NewEncoder(os.Stdout).Encode(resp)
+func reply(out io.Writer, status int, body string) error {
+    resp := GojinnResponse{
+        Status: status,
+        Headers: map[string][]string{
+            "Content-Type": {"application/json"},
+        },
+        Body: body,
+    }
+    return json.NewEncoder(out).Encode(resp)
 }
 
-func replyError(status int, msg string) {
-	// Creates a simple error JSON
-	errJSON := fmt.Sprintf(`{"error": "%s"}`, msg)
-	reply(status, errJSON)
+func replyError(out io.Writer, status int, msg string) error {
+    errJSON := fmt.Sprintf(`{"error": "%s"}`, msg)
+    return reply(out, status, errJSON)
 }
 ```
 
@@ -98,15 +105,19 @@ You have two main options for compiling your Go code to WASM.
 
 ### Option 1: Standard Compiler (Go Toolchain)
 
-Full compatibility, but larger binaries (~2MB+) and higher memory usage.
+Full compatibility, fully supported by Gojinn. Recommended for most users.
 
 ```bash
+# Since Go 1.21, use 'wasip1'
 GOOS=wasip1 GOARCH=wasm go build -o function.wasm main.go
 ```
+- **Pros:** 100% compatible with standard library.
+- **Cons:** Binaries are larger (~2MB+).
+- **Requirement:** Set `memory_limit` to at least 64MB in Caddyfile.
 
-**Gojinn requirement**: Configure `memory_limit` of 64MB or higher in the Caddyfile.
+**Gojinn requirement**: Configure `memory_limit` of `64MB` or higher in the Caddyfile.
 
-### Option 2: TinyGo (Recommended for Performance)
+### Option 2: TinyGo (Performance)
 
 Produces tiny binaries (~100KB - 500KB) and ultra-fast startup.
 
@@ -114,19 +125,34 @@ Produces tiny binaries (~100KB - 500KB) and ultra-fast startup.
 tinygo build -o function.wasm -target=wasi main.go
 ```
 
-- **Advantage**: Allows much lower `memory_limit` (e.g., 10MB)
-- **Limitation**: Some standard libraries (like full `net/http` or heavy reflection) may not work perfectly
+- **Pros:** Very low memory footprint (works with `memory_limit 10MB`).
+
+- **Cons:** Does not support `encoding/json` reflection fully in some versions, and lags behind latest Go versions.
 
 ---
 
 ## 💡 Golden Tips
 
-### Logging
+### Logging and Observability
 
-Use `fmt.Fprintf(os.Stderr, ...)` for logs. Gojinn redirects WASM Stderr to Caddy logs. 
+- **Logs:** Always write logs to `os.Stderr`. Gojinn captures this and sends it to Caddy's structured logs.
 
-> ⚠️ **Never use** `fmt.Println` for logs, as it goes to Stdout and corrupts the JSON response.
+- **Tracing:** Use the `trace_id` field from the request in your log messages. This allows you to trace a request from the Frontend -> Caddy -> WASM -> Database.
 
-### Panic
+> ⚠️ **Critical:** Never use `fmt.Println` for logs. It writes to `Stdout`, which breaks the JSON response contract and causes **502 Bad Gateway** errors.
 
-Avoid `panic()`. If your code panics, Gojinn will return error 502. Handle errors and return JSON with status 400/500.
+### Unit Testing
+
+Because we use the `run(io.Reader, io.Writer)` pattern, you can easily test your function without running Caddy:
+
+```bash
+func TestRun(t *testing.T) {
+    input := []byte(`{"method":"POST", "body": "..."}`)
+    var output bytes.Buffer
+    
+    // Inject mock buffers
+    err := run(bytes.NewReader(input), &output)
+    
+    // Assert output...
+}
+```

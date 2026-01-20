@@ -12,7 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// Helper para compilar um WASM simples para o teste
+// Helper to compile a simple WASM for testing.
+// Requires 'go' to be in the PATH.
 func compileTestWasm(t *testing.T, sourceCode, outName string) string {
 	tmpDir := t.TempDir()
 	srcPath := filepath.Join(tmpDir, "main.go")
@@ -23,7 +24,7 @@ func compileTestWasm(t *testing.T, sourceCode, outName string) string {
 		t.Fatal(err)
 	}
 
-	// Compila usando go build (exige Go instalado no ambiente de teste)
+	// Compiles using go build
 	cmd := exec.Command("go", "build", "-o", wasmPath, srcPath)
 	cmd.Env = append(os.Environ(), "GOOS=wasip1", "GOARCH=wasm")
 	out, err := cmd.CombinedOutput()
@@ -35,7 +36,7 @@ func compileTestWasm(t *testing.T, sourceCode, outName string) string {
 }
 
 func TestProvision_ValidatesConfig(t *testing.T) {
-	// Código Go mínimo
+	// Minimal Go code for a valid WASM binary
 	code := `package main; func main() {}`
 	wasmPath := compileTestWasm(t, code, "empty.wasm")
 
@@ -45,13 +46,16 @@ func TestProvision_ValidatesConfig(t *testing.T) {
 		Timeout:     caddy.Duration(5 * time.Second),
 	}
 
-	// Mock do Contexto do Caddy
+	// Mock of Caddy Context
+	// Note: Caddy's NewContext initializes a default metrics registry,
+	// which is required for our Provision method to succeed.
 	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
 
-	// Deve passar sem erro
+	// Should pass without error
 	err := r.Provision(ctx)
 	assert.NoError(t, err)
 	assert.NotNil(t, r.engine)
+	assert.NotNil(t, r.metrics, "Metrics struct should be initialized")
 }
 
 func TestProvision_InvalidMemoryLimit(t *testing.T) {
@@ -60,12 +64,12 @@ func TestProvision_InvalidMemoryLimit(t *testing.T) {
 
 	r := &Gojinn{
 		Path:        wasmPath,
-		MemoryLimit: "BATATA", // Valor inválido
+		MemoryLimit: "INVALID_VALUE",
 	}
 
 	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
 
-	// Deve falhar no provision
+	// Should fail on provision due to humanize parsing error
 	err := r.Provision(ctx)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid memory_limit")
@@ -73,7 +77,7 @@ func TestProvision_InvalidMemoryLimit(t *testing.T) {
 
 func TestProvision_FileNotFound(t *testing.T) {
 	r := &Gojinn{
-		Path: "./arquivo_que_nao_existe.wasm",
+		Path: "./file_that_does_not_exist.wasm",
 	}
 
 	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
@@ -81,6 +85,3 @@ func TestProvision_FileNotFound(t *testing.T) {
 	err := r.Provision(ctx)
 	assert.Error(t, err)
 }
-
-// Nota: Testar o ServeHTTP completo exige mockar http.ResponseWriter e *http.Request
-// Para a Fase 0, garantir que o Provision valida as configs de segurança é o mais crítico.

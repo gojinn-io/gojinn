@@ -1,0 +1,14 @@
+# These are the supported funding model platforms
+# Users will see the "Sponsor" button on the repository
+
+github: [pauloappbr] # Seu usuário do GitHub
+
+# Opções populares internacionalmente (Descomente se tiver)
+# patreon: pauloappbr
+# open_collective: gojinn
+# ko_fi: pauloappbr
+# tidelift: go/gojinn
+# buymeacoffee: pauloappbr
+
+# Links Customizados (Ótimo para métodos BR como Pix, LivePix, ou seu site)
+custom: ["https://paulo.app.br", "https://livepix.gg/pauloappbr"]

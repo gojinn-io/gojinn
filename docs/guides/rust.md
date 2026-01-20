@@ -6,7 +6,7 @@ Rust and WebAssembly are a perfect combination. Rust offers memory safety and na
 
 ## ✅ Prerequisites
 
-You'll need the `wasm32-wasi` target:
+You will need the WASI target installed in your toolchain:
 
 ```bash
 rustup target add wasm32-wasi
@@ -14,13 +14,22 @@ rustup target add wasm32-wasi
 
 ### Suggested Dependencies (Cargo.toml)
 
+To handle the JSON contract, you need serde.
+
 ```toml
+[package]
+name = "gojinn-function"
+version = "0.1.0"
+edition = "2021"
+
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
 
 ## 📋 The Pattern (Boilerplate)
+
+Copy this structure to handle the Gojinn JSON contract correctly, including the new distributed tracing capabilities.
 
 ```rust
 use std::collections::HashMap;
@@ -32,8 +41,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Deserialize)]
 struct GojinnRequest {
     method: String,
+    uri: String,
     headers: HashMap<String, Vec<String>>,
-    body: String, // Escaped payload inside here
+    body: String,     // User payload comes here as a string
+    trace_id: String, // Distributed Tracing ID from Caddy
 }
 
 #[derive(Serialize)]
@@ -43,7 +54,7 @@ struct GojinnResponse {
     body: String,
 }
 
-// --- 2. Your Payload ---
+// --- 2. Your Business Logic Data ---
 
 #[derive(Deserialize)]
 struct MyPayload {
@@ -51,18 +62,21 @@ struct MyPayload {
 }
 
 fn main() -> io::Result<()> {
-    // A. Read Stdin
+    // A. Read Stdin (Input)
     let mut buffer = String::new();
     io::stdin().read_to_string(&mut buffer)?;
 
-    // B. Unwrap Request
+    // B. Unwrap Gojinn Request
     let req: GojinnRequest = match serde_json::from_str(&buffer) {
         Ok(r) => r,
-        Err(_) => return reply_error(400, "Invalid JSON Input"),
+        Err(e) => return reply_error(400, &format!("Invalid JSON Input: {}", e)),
     };
 
-    // C. Process Internal Payload
-    // Note: In Rust, we safely handle empty strings or invalid JSON
+    // C. Logging (Use Stderr + TraceID)
+    // We use eprintln! to send logs to Caddy without breaking the JSON response
+    eprintln!("[{}] Processing request for URI: {}", req.trace_id, req.uri);
+
+    // D. Process Internal Payload
     let name = if req.body.is_empty() {
         "Stranger".to_string()
     } else {
@@ -72,15 +86,13 @@ fn main() -> io::Result<()> {
         }
     };
 
-    // D. Logic (Log to Stderr)
-    eprintln!("Rust processed request for: {}", name);
-
     // E. Respond
-    let response_body = format!(r#"{{"message": "Hello from Rust, {}!"}}"#, name);
+    let response_body = format!(r#"{{"message": "Hello from Rust, {}!", "trace": "{}"}}"#, name, req.trace_id);
     
     reply(200, response_body)
 }
 
+// Helper to write the JSON response to Stdout
 fn reply(status: u16, body: String) -> io::Result<()> {
     let mut headers = HashMap::new();
     headers.insert("Content-Type".to_string(), vec!["application/json".to_string()]);
@@ -110,12 +122,23 @@ To compile your Rust function to WASI:
 cargo build --target wasm32-wasi --release
 ```
 
-The binary will be at `target/wasm32-wasi/release/your_function.wasm`.
-
----
+The binary will be located at: `target/wasm32-wasi/release/your_function.wasm`
 
 ## 🚀 Why Rust on Gojinn?
 
-- **Memory Stability**: Unlike Go, Rust rarely suffers from initial OOM (Out of Memory) since it doesn't load a heavy runtime
+- **Memory Stability**: Unlike Go, Rust rarely suffers from initial OOM (Out of Memory) since it doesn't verify a heavy runtime or Garbage Collector.
 
-- **Size**: Optimized Rust binaries can be extremely small, ideal for distribution at the Edge
+- **Predictable Performance**: No "Stop-the-world" pauses.
+
+- **Binary Size**: After stripping, Rust binaries can be extremely small (< 2MB), which helps with cold start times.
+
+### Pro-Tip: Reducing Binary Size
+
+To make your function even faster, strip debug symbols in your Cargo.toml:
+
+```toml
+[profile.release]
+lto = true
+opt-level = 'z' # Optimize for size
+strip = true
+```

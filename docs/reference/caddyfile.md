@@ -1,6 +1,6 @@
 # ⚙️ Caddyfile Directive: `gojinn`
 
-The `gojinn` directive configures the WebAssembly runtime for a specific route. It should be used within HTTP handler blocks, such as `handle`, `route`, or directly within the site block.
+The `gojinn` directive configures the WebAssembly runtime for a specific route. It executes the WASM binary, passing the request context via Stdin and returning the response via Stdout.
 
 ## Syntax
 
@@ -10,6 +10,25 @@ gojinn <path_to_wasm_file> {
     memory_limit <size>
     env          <key> <value>
     args         <arg1> <arg2>...
+}
+```
+> ⚠️ **Important:** Handler Ordering
+
+Because Gojinn is a plugin, Caddy does not know its default execution order relative to standard directives (like `file_server` or `reverse_proxy`).
+
+To avoid the error "directive 'gojinn' is not an ordered HTTP handler", you must either:
+
+- **Define the order globally (Recommended):**
+```bash
+{
+    order gojinn last
+}
+```
+
+- **Or wrap it in a `route` block:**
+```bash
+route {
+    gojinn ./main.wasm
 }
 ```
 
@@ -32,7 +51,7 @@ Sets the maximum execution time allowed for the function before the VM is forcib
 - **Syntax**: `timeout <duration>`
 - **Examples**: `100ms`, `2s`, `1m`
 
-> ⚠️ **Important**: If the function exceeds this time, Gojinn will interrupt execution immediately and return a `504 Gateway Timeout` error (or `500` depending on the stage). This protects your server against infinite loops (`while true`).
+> ⚠️ **Important:** If the function exceeds this time, Gojinn will interrupt execution immediately and return a `504 Gateway Timeout` error (or `500` depending on the stage). This protects your server against infinite loops (`while true`) and CPU exhaustion.
 
 ### `memory_limit`
 
@@ -53,7 +72,7 @@ Injects environment variables into the WASM process.
 
 ### `args`
 
-Passes command-line arguments to the WASM binary (accessible via `os.Args`).
+Passes command-line arguments to the WASM binary (accessible via `os.Args` in the guest).
 
 - **Syntax**: `args <arg1> <arg2> ...`
 
@@ -64,6 +83,10 @@ Passes command-line arguments to the WASM binary (accessible via `os.Args`).
 ### Minimal Configuration
 
 ```caddy
+{
+    order gojinn last
+}
+
 :8080 {
     handle /api/simple {
         gojinn ./functions/simple.wasm
@@ -74,13 +97,18 @@ Passes command-line arguments to the WASM binary (accessible via `os.Args`).
 ### Production Configuration (Robust)
 
 ```caddy
+{
+    order gojinn last
+    admin :2019 # Required for Prometheus Metrics
+}
+
 :8080 {
     handle /api/contact {
         # Set header before passing to Gojinn
         header Content-Type application/json
 
         gojinn ./functions/contact.wasm {
-            # Kills slow processes
+            # Kills slow processes (CPU Budgeting)
             timeout 2s 
             
             # Prevents memory leaks

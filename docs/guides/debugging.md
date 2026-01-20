@@ -1,73 +1,107 @@
-# 🔍 Debugging and Troubleshooting
+# 🔍 Observability & Debugging
 
-Developing for WebAssembly *in-process* can be challenging because you don't have a traditional debugger attached to the server. This guide lists the most common errors and how to resolve them.
+Developing for WebAssembly *in-process* can be challenging because you don't have a traditional debugger attached to the server. Gojinn Phase 2 introduces "Enterprise Observability" features to help you see inside the black box.
 
+---
 
-## ❌ Error: `502 Bad Gateway`
+## 📊 Metrics (Prometheus)
 
-This is the most common error. It means Gojinn couldn't get a valid response from your WASM code.
+Gojinn automatically exposes native Prometheus metrics via Caddy's admin endpoint. This is the first place you should look to understand performance and health.
 
-### Common Causes
+**Endpoint:** `http://localhost:2019/metrics` (Default)
 
-**1. Panic / Crash**
-- Your Go/Rust code exited unexpectedly (exit code != 0)
-- **Solution**: Check the Caddy logs (Stderr). Gojinn prints the error there. Avoid using `os.Exit(1)` or `panic()`. Always handle errors and return JSON with status 500.
+### Key Metrics
 
-**2. Out of Memory (OOM)**
-- The runtime of your language needed more memory than configured
-- **Symptom**: Log `sys_mmap failed` or `failed to instantiate module`
-- **Solution**: Increase the `memory_limit` in the Caddyfile. For standard Go, use at least `64MB` or `128MB`
+| Metric Name | Type | Description |
+| :--- | :--- | :--- |
+| `gojinn_function_duration_seconds` | Histogram | Tracks how long your WASM function takes to run. Useful for spotting **Cold Starts** or performance regressions. Labeled by `path` and `status`. |
+| `gojinn_active_sandboxes` | Gauge | Shows how many WASM VMs are currently running. If this number keeps growing but never drops, you might have a **Concurrency Leak** (requests getting stuck). |
 
-**3. Invalid Protocol**
-- Your code printed something to `Stdout` that is not the expected JSON
-- **Cause**: Using `fmt.Println("debug")` to debug. This pollutes the response JSON
-- **Solution**: Always use `fmt.Fprintf(os.Stderr, ...)` for debug logs. Stdout is exclusive for the response JSON
+**How to check via CLI:**
 
-## ❌ Error: JSON error logs
-
-If you see errors like:
-
-```
-json: cannot unmarshal string into Go struct field ... of type int
+```bash
+curl -s http://localhost:2019/metrics | grep gojinn
 ```
 
-**Cause**: You're violating the [Function Contract](../concepts/contract.md)
+---
 
-- The `status` field must be a number (`200`), not a string (`"200"`)
-- The `headers` field must be a map of lists (`{"Key": ["Val"]}`), not simple strings
+## 🆔 Distributed Tracing
 
+Every request sent to your WASM function includes a `trace_id` field in the JSON payload.
 
-## ❌ Error: "Operation not supported"
+- **Caddy (Host)**: Generates or propagates the Traceparent header.
+- **Gojinn (Plugin)**: Injects this ID into the Input JSON.
+- **WASM (Guest)**: Should use this ID in its logs.
 
-Your code tried to do something prohibited by the WASI Sandbox.
+**Debugging Tip:** Always print the `trace_id` in your error logs. This allows you to correlate a specific user error in the Frontend directly to the Caddy log entry and the WASM execution failure.
 
-- **Network Attempt**: Trying to connect to a database or call an external API
-- **File Attempt**: Trying to read a file outside the allowed context
+---
 
-**Solution**: Gojinn (Phase 1) is focused on pure computation. Pass necessary data via input (JSON) or environment variables. Socket support is planned for the future.
+## ❌ Common Errors
 
+### Error: 504 Gateway Timeout
+
+**Cause:** Your function took longer to execute than the configured timeout.
+
+**Reason A:** Infinite loop in your code (`for {}`).
+
+**Reason B:** Heavy computation (e.g., recursive Fibonacci) on slow hardware.
+
+**Solution:**
+
+- Optimize your algorithm.
+- Increase the `timeout` directive in your Caddyfile (e.g., `timeout 5s`).
+
+### Error: 502 Bad Gateway
+
+This means Gojinn couldn't get a valid JSON response from your WASM code.
+
+**Common Causes:**
+
+#### Dirty Stdout (The #1 Mistake)
+
+- **Cause:** You used `fmt.Println("debug info")` to debug.
+- **Why it breaks:** Gojinn expects pure JSON from Stdout. Any text before or after the JSON makes it invalid.
+- **Fix:** Move all logs to Stderr.
+
+#### Panic / Crash
+
+- **Cause:** Your Go/Rust code exited with a non-zero code or panicked.
+- **Fix:** Check Caddy logs. Gojinn captures the panic output and prints it there.
+
+### Error: OOM (Out of Memory)
+
+- **Symptom:** Logs showing `sys_mmap failed` or `failed to instantiate module`.
+- **Cause:** The runtime needed more memory than the `memory_limit` allowed.
+- **Fix:** Increase `memory_limit` in the Caddyfile. Standard Go binaries often need at least 64MB to start due to the Garbage Collector overhead.
+
+---
 
 ## 🛠️ Recommended Debugging Flow
 
 When something goes wrong, follow this ritual:
 
-### 1. Open two terminals
+### 1. The "Two Terminals" Setup
 
-- **Terminal 1**: Running `./caddy run` (to see logs in real time)
-- **Terminal 2**: To run `curl` commands and compile
+- **Terminal 1:** Run `caddy run` (to see structured logs and WASM Stderr output).
+- **Terminal 2:** Run your curl commands and build scripts.
 
-### 2. Use Stderr Logs
+### 2. Check the Metrics
 
-- Fill your code with `eprintln!` (Rust) or `fmt.Fprintf(os.Stderr)` (Go)
-- Example:
-  ```go
-  fmt.Fprintf(os.Stderr, "DEBUG: Payload received: %s\n", string(body))
-  ```
+Before diving into code, check if the server is healthy.
 
-### 3. Test in Isolation with Curl
+```bash
+curl localhost:2019/metrics | grep gojinn_active_sandboxes
+```
 
-- Don't just test by clicking a button on your website. The browser hides network errors
-- Use:
-  ```bash
-  curl -v -X POST http://localhost:8080/api/function -d '{"test": true}'
-  ```
+If it's > 0 when idle, your functions are hanging!
+
+### 3. Test in Isolation
+
+Don't test via browser immediately. Use curl to see the raw HTTP headers and status codes.
+
+```bash
+curl -v -X POST http://localhost:8080/api/function \
+  -H "Content-Type: application/json" \
+  -d '{"test": true}'
+```
