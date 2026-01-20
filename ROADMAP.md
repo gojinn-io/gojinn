@@ -25,12 +25,11 @@ This roadmap transforms Gojinn from a runtime into a Global Serverless Platform 
 ## 🔵 Phase 2: Enterprise Observability & Limits (Current Priority)
 *Gain trust by proving reliability and giving developers "X-Ray vision".*
 
-- [ ] **Structured Logging Interface:** Implement host.Log(level, json) so WASM logs appear correctly structured in Datadog/Loki, not just as raw stdout text.
-- [ ] **OpenTelemetry Tracing:** Inject traceparent context into WASM so calls can be traced from Frontend -> Caddy -> WASM -> Database in a single waterfall view.
-- [ ] **Prometheus Metrics:** Expose native metrics: gojinn_function_duration_seconds and gojinn_active_sandboxes.
-- [ ] **CPU Budgeting:** Strict metering to prevent infinite loops.
-- [ ] **Security Policy (SECURITY.md):** Define security boundaries explicitly.
-
+- [x] **Structured Logging Interface:** Implement host.Log(level, json) so WASM logs appear correctly structured in Datadog/Loki, not just as raw stdout text.
+- [x] **OpenTelemetry Tracing:** Inject traceparent context into WASM so calls can be traced from Frontend -> Caddy -> WASM -> Database in a single waterfall view.
+- [x] **Prometheus Metrics:** Expose native metrics: gojinn_function_duration_seconds and gojinn_active_sandboxes.
+- [x] **CPU Budgeting:** Strict metering to prevent infinite loops.
+- [x] **Security Policy (SECURITY.md):** Define security boundaries explicitly.
 
 ## 🟣 Phase 3: Trust & Adoption Strategy
 *Remove barriers for adoption by legacy teams and CTOs.*
