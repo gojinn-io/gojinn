@@ -4,8 +4,26 @@ Gojinn is not just an alternative to Docker; it's a solution for specific archit
 
 Below, we explore ideal scenarios for adopting **In-Process Serverless**.
 
+---
 
-## 1. Massive Multi-Tenant SaaS
+## 1. The Strangler Fig (Legacy Migration)
+
+**Scenario:** You operate a massive monolithic application (Java Spring, PHP Laravel, Python Django) that is hard to maintain and has performance bottlenecks. Rewriting the whole system to Go is too risky and expensive.
+
+* **The Traditional Problem:**
+    * "Big Bang" rewrites often fail.
+    * Adding a proxy + microservices adds network latency.
+* **The Gojinn Solution:**
+    * Use Caddy as a "Smart Router".
+    * Keep 99% of the traffic going to the Legacy Monolith.
+    * Intercept **only specific slow endpoints** (e.g., `/api/report`) and run them in Gojinn (WASM).
+    * **Result:** You migrate endpoint-by-endpoint safely, with instant performance gains (<1ms cold start).
+
+👉 **[See the Step-by-Step Code Example here](../../examples/legacy-integration)**
+
+---
+
+## 2. Massive Multi-Tenant SaaS
 
 **Scenario:** You operate a SaaS platform (like Shopify, Webflow, or Zapier) and want to allow your users to execute custom scripts or custom business rules.
 
@@ -17,8 +35,9 @@ Below, we explore ideal scenarios for adopting **In-Process Serverless**.
     * **Isolation:** Each execution is sandboxed; one client cannot access another's data.
     * **Density:** Since idle code is just a file on disk, you scale to 10,000 clients with the infrastructure cost of 1 server.
 
+---
 
-## 2. "Air-Gapped" Environments and Compliance
+## 3. "Air-Gapped" Environments and Compliance
 
 **Scenario:** Financial institutions, Government, Healthcare, or Industry 4.0 where data **cannot** leave the local infrastructure (On-Premise) for processing on the public cloud.
 
@@ -29,8 +48,9 @@ Below, we explore ideal scenarios for adopting **In-Process Serverless**.
     * **Sovereignty:** The runtime runs entirely in your Caddy binary. No "phoning home".
     * **Simplicity:** Deployment is just copying a binary and a configuration file. Works offline on isolated networks.
 
+---
 
-## 3. High-Performance Middleware
+## 4. High-Performance Middleware
 
 **Scenario:** You need to validate complex payloads (JSON Schema), verify cryptographic signatures (HMAC/JWT), or transform data *before* it reaches your legacy backend.
 
@@ -41,14 +61,7 @@ Below, we explore ideal scenarios for adopting **In-Process Serverless**.
     * **Zero-Copy Networking:** Data is passed from Caddy's memory directly to the function's memory.
     * Ideal for: *Advanced Rate Limiting, Custom WAF, XML to JSON Transformation.*
 
-
-## 4. Edge Computing
-
-**Scenario:** You have geographically distributed servers (own CDNs or cheap VPS) and want to process requests as close to the user as possible.
-
-* **The Gojinn Solution:**
-    * Due to the tiny size of WASM binaries (often < 2MB) and low resource consumption, you can run Gojinn on modest hardware (Raspberry Pi, $5 VPS) with enterprise performance.
-
+---
 
 ## 5. Protection Against Infinite Resources
 
