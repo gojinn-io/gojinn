@@ -44,8 +44,10 @@ jobs:
       - name: Build Host (Linux)
         run: go build -v . cmd/...
 
-      - name: Build SDK (WASM)
+      - name: Build WASM Fixtures
         run: |
+          GOOS=wasip1 GOARCH=wasm go build -o examples/functions/http-echo/handler.wasm ./examples/functions/http-echo/
+          
           GOOS=wasip1 GOARCH=wasm go build -o /dev/null ./sdk/...
           GOOS=wasip1 GOARCH=wasm go build -o /dev/null ./functions/...
 
