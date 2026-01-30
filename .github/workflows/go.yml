@@ -23,7 +23,8 @@ jobs:
           go mod download
           go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
           
-          golangci-lint run . cmd/... --timeout=10m --issues-exit-code=1
+          # CORREÇÃO AQUI: Usamos ./cmd/... para apontar para SEU projeto
+          golangci-lint run . ./cmd/... --timeout=10m --issues-exit-code=1
 
   test:
     name: Test, Security & Build
@@ -42,14 +43,18 @@ jobs:
           govulncheck ./... || true 
 
       - name: Build Host (Linux)
-        run: go build -v . cmd/...
+        # CORREÇÃO AQUI: ./cmd/...
+        run: go build -v . ./cmd/...
 
       - name: Build WASM Fixtures
         run: |
+          # Gera o arquivo real que o teste unitário precisa
           GOOS=wasip1 GOARCH=wasm go build -o examples/functions/http-echo/handler.wasm ./examples/functions/http-echo/
           
+          # Valida o resto
           GOOS=wasip1 GOARCH=wasm go build -o /dev/null ./sdk/...
           GOOS=wasip1 GOARCH=wasm go build -o /dev/null ./functions/...
 
       - name: Test Host
-        run: go test -v -race -short . cmd/...
+        # CORREÇÃO AQUI: ./cmd/... garante que testamos apenas o Gojinn
+        run: go test -v -race -short . ./cmd/...
