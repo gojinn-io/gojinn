@@ -5,13 +5,13 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/caddyserver/caddy/v2.svg)](https://pkg.go.dev/github.com/pauloappbr/gojinn)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
 [![Wasm Engine](https://img.shields.io/badge/engine-wazero-purple)](https://wazero.io)
-[![Version](https://img.shields.io/badge/version-v0.3.0-blue)]()
+[![Version](https://img.shields.io/badge/version-v0.4.1-blue)]()
 
 **Gojinn** is an *in-process serverless* runtime for the [Caddy](https://caddyserver.com) web server.
 
-It allows you to execute **Go**, **Rust**, **Zig**, and **C++** code (compiled to WebAssembly) directly in the HTTP request flow.
+It allows you to execute **Go**, **Rust**, **Zig**, and **C++** code (compiled to WebAssembly) directly in the HTTP request flow with **Host-Managed Capabilities** (Database, Key-Value Store, Logs).
 
-With the release of **v0.3.0**, Gojinn features a **JIT (Just-In-Time) Caching Engine**, eliminating the *cold start* problem entirely and achieving **microsecond latency**.
+With the release of **v0.4.0**, Gojinn introduces the **Official SDK** and **Sidecar Database Support** (Postgres/MySQL/SQLite), enabling true stateful serverless applications.
 
 ---
 
@@ -21,27 +21,36 @@ Traditional serverless introduces network latency. Gojinn brings computation clo
 
 | Feature | Description |
 | :--- | :--- |
-| **⚡ Microsecond Latency** | JIT Caching & Buffer Pooling ensure execution in **< 1ms**. (vs 1500ms+ for Docker). |
+| **⚡ Microsecond Latency** | JIT Caching & Buffer Pooling ensure execution in **< 1ms**. |
+| **🗄️ Zero-Latency DB** | **New:** Host-managed connection pools for Postgres, MySQL, and embedded SQLite. |
+| **🧠 In-Memory KV** | **New:** Ultra-fast Key-Value store shared across requests (great for counters/cache). |
 | **🏗️ Zero Infra** | No Docker daemon, no Kubernetes sidecars. It's just a Caddy plugin. |
-| **👁️ Observable** | Native support for **Prometheus Metrics**, **OpenTelemetry Tracing**, and Structured Logging. |
-| **🛡️ Secure** | Each request runs in a strict Sandbox via [Wazero](https://wazero.io). If the code crashes, Caddy stays alive. |
-| **💰 Zero Idle Cost** | Functions are just files on disk (or cached RAM). They consume **zero CPU** when idle. |
+| **👁️ Observable** | Native support for **Prometheus Metrics**, **Tracing**, and **Secure Remote Debugging**. |
+| **🛡️ Secure** | Each request runs in a strict Sandbox via [Wazero](https://wazero.io). |
 
 ---
 
 ## Use Cases
 
-* **Strangler Fig Pattern:** Replace legacy monolith endpoints one by one.
-* **High-Performance Middleware:** Custom authentication, WAF, or transformations.
-* **Multi-Tenant Platforms:** Run untrusted user code safely.
+* **Stateful Edge Logic:** Rate limiters, counters, and caching layers using Gojinn KV.
+* **Database APIs:** Build REST/GraphQL endpoints querying SQL databases directly.
+* **Hypermedia/HTMX:** Server-Side Rendering of HTML fragments with zero overhead.
+* **Legacy Migration:** "Strangler Fig" pattern replacing monolith endpoints one by one.
 
 ---
 
-## Getting Started
+## Documentation
 
-To start using Gojinn, you need to compile Caddy with the plugin and create your first WASM function.
-
+### Getting Started
 * [⚡ Quick Start Guide](./getting-started/quickstart.md)
-* [🏗 Architecture Deep Dive](./concepts/architecture.md)
-* [📊 Performance Benchmarks](./benchmark.md)
+* [📦 Installation](./getting-started/installation.md)
+
+### Guides
+* [🛠️ Golang SDK & Examples](./guides/golang.md)
+* [🚢 Deployment & Operations](./guides/deployment.md) **(New)**
+* [🐞 Debugging & Observability](./guides/debugging.md)
+
+### Deep Dive
+* [🏗 Architecture](./concepts/architecture.md)
 * [🔌 JSON Contract](./concepts/contract.md)
+* [📊 Benchmarks](./benchmark.md)

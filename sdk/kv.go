@@ -4,8 +4,10 @@ import (
 	"unsafe"
 )
 
+//go:wasmimport gojinn host_kv_set
 func host_kv_set(kPtr, kLen, vPtr, vLen uint32)
 
+//go:wasmimport gojinn host_kv_get
 func host_kv_get(kPtr, kLen, outPtr, outMaxLen uint32) uint32
 
 type KVStore struct{}

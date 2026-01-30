@@ -51,23 +51,31 @@ This roadmap transforms Gojinn from a runtime into a Global Serverless Platform 
 - [x] **HTMX & SSR Patterns:** Create official examples and helpers for returning HTML fragments from WASM (Go Templates/Rust) instead of JSON. Validate the "Hypermedia-Driven" architecture.
 - [x] **Host-Managed DB Pool:** Expose Host DB connections (Postgres/MySQL) to WASM via Host Functions to prevent "Too Many Connections" errors.
 - [x] **Gojinn KV:** In-memory key-value store exposed to WASM via Host Functions.
-- [ ] **SQLite Sidecar:** Allow WASM to execute SQL queries on a local SQLite file (Zero-network DB).
+- [x] **SQLite Sidecar:** Allow WASM to execute SQL queries on a local SQLite file (Zero-network DB).
 
-## 🔴 Phase 5: Polyglot Support (Current Priority)
+## 🔴 Phase 5: Production & Operations (Completed v0.5.0)
+*Professionalize the deployment. Treat Gojinn as critical infrastructure.*
+
+- [x] **Optimized Build Pipeline:** Makefile/Script to generate lean binaries for Linux (AMD64/ARM64).
+- [x] **Systemd Integration:** Create a `.service` file for auto-restart and log management.
+- [x] **Log Rotation:** Ensure Caddy logs don't fill the disk.
+- [x] **Git-Push-to-Deploy:** Simple hook or script to update the server based on Git tags.
+
+## 🟤 Phase 6: Polyglot Support (Current Priority)
 *Expand the ecosystem. Don't force users to learn Rust.*
 
-- [ ] **JavaScript/TypeScript Adapter:** Integrate Javy (QuickJS) to compile JS to WASM.
+- [ ] **JavaScript/TypeScript Adapter:** Integrate Javy (QuickJS).
 - [ ] **Python Adapter:** Support for RustPython packed as WASM.
-- [ ] **Language-Agnostic CLI:** Gojinn build command to auto-detect language.
+- [ ] **Language-Agnostic CLI:** Gojinn build command.
 
-## 🟤 Phase 6: Async & Event-Driven
+## 🟤 Phase 7: Async & Event-Driven
 *Compete with AWS Lambda's event ecosystem.*
 
 - [ ] **Cron Triggers:** Native support for scheduling functions (@every 5m)
 - [ ] **Worker Pools (Async Mode):** "Fire-and-forget" support using internal Go channels.
 - [ ] **Queue Binding:** Internal buffer for async processing.
 
-## 🔴 Phase 7: Distributed & Edge Scale
+## 🔴 Phase 8: Distributed & Edge Scale
 *Scale horizontally across regions effortlessly.*
 
 - [ ] **Cluster Storage Support:** Document and support using caddy-storage-redis or consul to synchronize TLS certificates across multiple Gojinn nodes (Edge capability).

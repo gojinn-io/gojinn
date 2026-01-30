@@ -5,6 +5,7 @@ import (
 	"unsafe"
 )
 
+//go:wasmimport gojinn host_db_query
 func host_db_query(queryPtr uint32, queryLen uint32, outPtr uint32, outMaxLen uint32) uint32
 
 type DBHandler struct{}
@@ -16,16 +17,16 @@ func (d DBHandler) Query(query string) ([]map[string]interface{}, error) {
 	queryPtr := uint32(uintptr(ptr))
 	queryLen := uint32(len(query))
 
-	capacity := uint32(65536)
-	buffer := make([]byte, capacity)
+	capacity := uint32(65536) // Query executa uma instrução SQL no Host e retorna um array de objetos dinâmicos.
 
+	buffer := make([]byte, capacity)
 	outPtr := uint32(uintptr(unsafe.Pointer(&buffer[0])))
 
 	written := host_db_query(queryPtr, queryLen, outPtr, capacity)
 
 	jsonBytes := buffer[:written]
-
 	var result []map[string]interface{}
+
 	if err := json.Unmarshal(jsonBytes, &result); err != nil {
 		return nil, err
 	}
