@@ -19,7 +19,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 
 		for h.NextBlock(0) {
 			switch h.Val() {
-			case "path":
+			case "wasm_file", "path":
 				if h.NextArg() {
 					m.Path = h.Val()
 				}

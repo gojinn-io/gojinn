@@ -53,9 +53,12 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 
 ### 🟤 Phase 6: Polyglot Support (Active Priority)
 *Don't force users to learn Rust/Go. Support the ecosystem.*
-- [ ] **JavaScript/TypeScript Adapter:** Integrate Javy (QuickJS) for JS support.
-- [ ] **Python Adapter:** Support for RustPython/CPython packed as WASM.
-- [ ] **Language-Agnostic CLI:** Unified `gojinn build` command.
+- [x] **JavaScript/TypeScript Adapter:** Integrate Javy (QuickJS) for JS support.
+- [x] **Python Adapter:** Support for Python 3.12 (VMware Build).
+- [x] **PHP Adapter:** Support for PHP 8.2 (VMware Build) via CGI-style execution.
+- [x] **Ruby Adapter:** Support for Ruby 3.2 (VMware Build) with library loading.
+- [x] **.NET / C# Adapter:** Support for C# 8.0 via WASI SDK (Enterprise).
+- [x] **Unified Build System:** Implemented via `Makefile` (Replaces `gojinn build` CLI for flexibility).
 
 ### 🛡️ Phase 7: The Fortress (Security Hardening)
 *Mathematical guarantees against bad code and attacks.*
@@ -110,6 +113,7 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 ### 🖥️ Phase 14: Gojinn Studio
 - [ ] **Visual Control Plane:** Web GUI for topology, metrics, and management.
 - [ ] **Hot Patching:** Update variables via UI.
+- [ ] **Language-Agnostic CLI:** Unified gojinn build command (replacing Makefile).
 
 ### 🤖 Phase 15: The Agentic Interface (MCP)
 - [ ] **Auto-MCP Generation:** Expose WASM functions as tools for Claude/OpenAI agents.

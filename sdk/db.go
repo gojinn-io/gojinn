@@ -19,7 +19,7 @@ func (d DBHandler) Query(query string) ([]map[string]interface{}, error) {
 	queryPtr := uint32(uintptr(ptr))
 	queryLen := uint32(len(query))
 
-	capacity := uint32(65536) // Query executa uma instrução SQL no Host e retorna um array de objetos dinâmicos.
+	capacity := uint32(65536)
 
 	buffer := make([]byte, capacity)
 	outPtr := uint32(uintptr(unsafe.Pointer(&buffer[0])))

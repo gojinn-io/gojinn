@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"runtime"
 	"sync"
 	"time"
 
@@ -62,11 +61,7 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 	}
 
 	if r.PoolSize <= 0 {
-		numCPU := runtime.NumCPU()
-		r.PoolSize = numCPU * 4
-		if r.PoolSize < 50 {
-			r.PoolSize = 50
-		}
+		r.PoolSize = 2
 	}
 	if r.Timeout == 0 {
 		r.Timeout = caddy.Duration(60 * time.Second)

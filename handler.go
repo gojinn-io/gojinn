@@ -36,7 +36,11 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 
 	isDebug := r.DebugSecret != "" && req.Header.Get("X-Gojinn-Debug") == r.DebugSecret
 
-	var stderrTarget io.Writer = os.Stderr
+	stderrBuf := bufferPool.Get().(*bytes.Buffer)
+	stderrBuf.Reset()
+	defer bufferPool.Put(stderrBuf)
+
+	var stderrTarget io.Writer = io.MultiWriter(os.Stderr, stderrBuf)
 	var debugLogBuf *bytes.Buffer
 
 	if isDebug {
@@ -76,14 +80,17 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 	stdoutBuf.Reset()
 	defer bufferPool.Put(stdoutBuf)
 
+	fullArgs := append([]string{"python"}, r.Args...)
+
 	config := wazero.NewModuleConfig().
 		WithStdout(stdoutBuf).
 		WithStderr(stderrTarget).
 		WithStdin(bytes.NewReader(inputJSON)).
-		WithArgs(r.Args...).
+		WithArgs(fullArgs...).
 		WithSysWalltime().
 		WithSysNanotime().
-		WithRandSource(rand.Reader)
+		WithRandSource(rand.Reader).
+		WithFSConfig(wazero.NewFSConfig().WithDirMount(".", "/"))
 
 	for k, v := range r.Env {
 		config = config.WithEnv(k, v)
@@ -110,7 +117,11 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 			statusLabel = "504"
 		}
 		r.metrics.duration.WithLabelValues(r.Path, statusLabel).Observe(duration)
-		r.logger.Error("wasm execution failed", zap.Error(err))
+
+		r.logger.Error("wasm execution failed",
+			zap.Error(err),
+			zap.String("stderr_preview", stderrBuf.String()),
+		)
 
 		injectDebugLogs()
 		return caddyhttp.Error(http.StatusInternalServerError, err)
@@ -118,25 +129,35 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 	defer instance.Close(ctx)
 
 	if stdoutBuf.Len() == 0 {
-		statusLabel = "500"
+		statusLabel = "502"
 		r.metrics.duration.WithLabelValues(r.Path, statusLabel).Observe(duration)
 
 		injectDebugLogs()
-		return caddyhttp.Error(http.StatusInternalServerError, fmt.Errorf("empty response"))
+
+		jsError := stderrBuf.String()
+		if jsError == "" {
+			jsError = "No stderr output. (Possible causes: script not found, early exit)"
+		}
+
+		r.logger.Error("WASM Empty Output", zap.String("stderr", jsError))
+
+		return caddyhttp.Error(http.StatusBadGateway, fmt.Errorf("empty response from WASM. Stderr: %s", jsError))
 	}
 
 	var respPayload struct {
-		Status  int                 `json:"status"`
-		Headers map[string][]string `json:"headers"`
-		Body    string              `json:"body"`
+		Status  int                    `json:"status"`
+		Headers map[string]interface{} `json:"headers"`
+		Body    string                 `json:"body"`
 	}
 
 	if err := json.Unmarshal(stdoutBuf.Bytes(), &respPayload); err != nil {
 		statusLabel = "502"
 		r.metrics.duration.WithLabelValues(r.Path, statusLabel).Observe(duration)
 
-		injectDebugLogs()
-		return caddyhttp.Error(http.StatusBadGateway, fmt.Errorf("invalid json output"))
+		rawOutput := stdoutBuf.String()
+		r.logger.Error("Invalid JSON from WASM", zap.String("output", rawOutput), zap.Error(err))
+
+		return caddyhttp.Error(http.StatusBadGateway, fmt.Errorf("invalid json output: %s. Error: %v", rawOutput, err))
 	}
 
 	if respPayload.Status == 0 {
@@ -148,8 +169,19 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 	injectDebugLogs()
 
 	for k, v := range respPayload.Headers {
-		for _, val := range v {
+		switch val := v.(type) {
+		case string:
 			rw.Header().Add(k, val)
+		case []interface{}:
+			for _, item := range val {
+				if strVal, ok := item.(string); ok {
+					rw.Header().Add(k, strVal)
+				}
+			}
+		case []string:
+			for _, strVal := range val {
+				rw.Header().Add(k, strVal)
+			}
 		}
 	}
 	rw.WriteHeader(respPayload.Status)

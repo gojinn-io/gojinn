@@ -51,7 +51,7 @@ func TestParseCaddyfile(t *testing.T) {
 			input: `gojinn ./app.wasm {
 				pool_size not_a_number
 			}`,
-			expectedPath: "./app.wasm", // CORREÇÃO: O path é lido mesmo se o resto falhar
+			expectedPath: "./app.wasm",
 			shouldErr:    false,
 		},
 		{
@@ -59,7 +59,7 @@ func TestParseCaddyfile(t *testing.T) {
 			input: `gojinn ./app.wasm {
 				timeout forever
 			}`,
-			expectedPath: "./app.wasm", // CORREÇÃO: O path é lido mesmo se o resto falhar
+			expectedPath: "./app.wasm",
 			shouldErr:    false,
 		},
 	}

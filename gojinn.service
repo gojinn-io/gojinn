@@ -9,13 +9,10 @@ Type=notify
 User=paulo
 Group=paulo
 
-# Mantemos o diretório de trabalho aqui para ele achar o Caddyfile e as funções wasm
 WorkingDirectory=/home/paulo/Documentos/gojinn
 
-# --- MUDANÇA AQUI: Aponta para o binário no sistema ---
 ExecStart=/usr/local/bin/gojinn run --environ --config /home/paulo/Documentos/gojinn/Caddyfile
 ExecReload=/usr/local/bin/gojinn reload --config /home/paulo/Documentos/gojinn/Caddyfile
-# ------------------------------------------------------
 
 TimeoutStopSec=5s
 LimitNOFILE=1048576

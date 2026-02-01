@@ -19,12 +19,12 @@ type Response struct {
 }
 
 func main() {
-	fmt.Fprintf(os.Stderr, "DEBUG [WASM]: Iniciando a funcao de contato...\n")
-	fmt.Fprintf(os.Stderr, "DEBUG [WASM]: Verificando variaveis de ambiente...\n")
+	fmt.Fprintf(os.Stderr, "DEBUG [WASM]: Starting contact function...\n")
+	fmt.Fprintf(os.Stderr, "DEBUG [WASM]: Checking environment variables...\n")
 
 	inputData, _ := io.ReadAll(os.Stdin)
 
-	fmt.Fprintf(os.Stderr, "DEBUG [WASM]: Recebi payload de tamanho: %d bytes\n", len(inputData))
+	fmt.Fprintf(os.Stderr, "DEBUG [WASM]: Received payload with size: %d bytes\n", len(inputData))
 
 	var req Request
 	json.Unmarshal(inputData, &req)
@@ -35,7 +35,7 @@ func main() {
 			"Content-Type": {"application/json"},
 			"X-Powered-By": {"Gojinn WASM"},
 		},
-		Body: `{"message": "Sucesso! O Debug Mode funciona!", "original_method": "` + req.Method + `"}`,
+		Body: `{"message": "Success! Debug Mode is working!", "original_method": "` + req.Method + `"}`,
 	}
 
 	json.NewEncoder(os.Stdout).Encode(resp)
