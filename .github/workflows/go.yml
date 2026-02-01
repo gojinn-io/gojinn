@@ -43,7 +43,6 @@ jobs:
           govulncheck ./... || true 
 
       - name: Build Host (Linux)
-        # CORREÇÃO AQUI: ./cmd/...
         run: go build -v . ./cmd/...
 
       - name: Build WASM Fixtures
@@ -56,5 +55,4 @@ jobs:
           GOOS=wasip1 GOARCH=wasm go build -o /dev/null ./functions/...
 
       - name: Test Host
-        # CORREÇÃO AQUI: ./cmd/... garante que testamos apenas o Gojinn
         run: go test -v -race -short . ./cmd/...
