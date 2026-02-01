@@ -114,6 +114,7 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 - [ ] **Visual Control Plane:** Web GUI for topology, metrics, and management.
 - [ ] **Hot Patching:** Update variables via UI.
 - [ ] **Language-Agnostic CLI:** Unified gojinn build command (replacing Makefile).
+- [ ] **Ecosystem Split:** Migrate examples and SDKs to dedicated repositories (e.g., `gojinn-examples`) for cleaner architecture.
 
 ### 🤖 Phase 15: The Agentic Interface (MCP)
 - [ ] **Auto-MCP Generation:** Expose WASM functions as tools for Claude/OpenAI agents.

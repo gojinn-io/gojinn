@@ -1,0 +1,6 @@
+examples/** linguist-vendored
+sdk/** linguist-vendored
+docs/** linguist-documentation
+
+*.wasm linguist-vendored
+*.min.js linguist-vendored
