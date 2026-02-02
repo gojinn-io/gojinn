@@ -8,10 +8,22 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
+type CronJob struct {
+	Schedule string `json:"schedule"`
+	WasmFile string `json:"wasm_file"`
+}
+
+type MQTTSub struct {
+	Topic    string `json:"topic"`
+	WasmFile string `json:"wasm_file"`
+}
+
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	var m Gojinn
 	m.Env = make(map[string]string)
 	m.Mounts = make(map[string]string)
+	m.CronJobs = []CronJob{}
+	m.MQTTSubs = []MQTTSub{}
 
 	for h.Next() {
 		args := h.RemainingArgs()
@@ -99,6 +111,47 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				if h.NextArg() {
 					m.S3SecretKey = h.Val()
 				}
+			case "cron":
+				var job CronJob
+				if !h.NextArg() {
+					return nil, h.Err("cron expects a schedule string (e.g., '@every 5s')")
+				}
+				job.Schedule = h.Val()
+				if !h.NextArg() {
+					return nil, h.Err("cron expects a wasm file path")
+				}
+				job.WasmFile = h.Val()
+				m.CronJobs = append(m.CronJobs, job)
+
+			case "mqtt_broker":
+				if h.NextArg() {
+					m.MQTTBroker = h.Val()
+				}
+			case "mqtt_client_id":
+				if h.NextArg() {
+					m.MQTTClientID = h.Val()
+				}
+			case "mqtt_username":
+				if h.NextArg() {
+					m.MQTTUsername = h.Val()
+				}
+			case "mqtt_password":
+				if h.NextArg() {
+					m.MQTTPassword = h.Val()
+				}
+			case "mqtt_subscribe":
+				var sub MQTTSub
+				if !h.NextArg() {
+					return nil, h.Err("mqtt_subscribe expects a topic")
+				}
+				sub.Topic = h.Val()
+
+				if !h.NextArg() {
+					return nil, h.Err("mqtt_subscribe expects a wasm file path")
+				}
+				sub.WasmFile = h.Val()
+
+				m.MQTTSubs = append(m.MQTTSubs, sub)
 			}
 		}
 	}

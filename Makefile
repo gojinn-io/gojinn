@@ -48,6 +48,12 @@ build-funcs:
 	@GOOS=wasip1 GOARCH=wasm go build -o functions/sql.wasm functions/sql/main.go || echo "⚠️ functions/sql not found, skipping"
 	@GOOS=wasip1 GOARCH=wasm go build -o functions/counter.wasm functions/counter/main.go || echo "⚠️ functions/counter not found, skipping"
 	@GOOS=wasip1 GOARCH=wasm go build -o functions/s3.wasm functions/s3/main.go || echo "⚠️ functions/s3 not found, skipping"
+	@GOOS=wasip1 GOARCH=wasm go build -o functions/cron.wasm functions/cron/main.go || echo "⚠️ functions/cron skipping"
+	@GOOS=wasip1 GOARCH=wasm go build -o functions/trigger.wasm functions/trigger/main.go || echo "⚠️ trigger skipping"
+	@GOOS=wasip1 GOARCH=wasm go build -o functions/worker.wasm functions/worker/main.go || echo "⚠️ worker skipping"
+	@GOOS=wasip1 GOARCH=wasm go build -o functions/fail.wasm functions/fail/main.go || echo "⚠️ fail skipping"
+	@GOOS=wasip1 GOARCH=wasm go build -o functions/trigger-fail.wasm functions/trigger-fail/main.go || echo "⚠️ trigger-fail skipping"
+	@GOOS=wasip1 GOARCH=wasm go build -o functions/iot.wasm functions/iot/main.go || echo "⚠️ iot skipping"
 
 # --- 3. Build Polyglot ---
 build-polyglot: download-runtimes

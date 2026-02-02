@@ -1,8 +1,7 @@
 # 🗺️ Project Roadmap: The Sovereign Cloud
 
->This roadmap describes optional and modular evolution paths.
-Not all phases are intended to live in the core runtime.
-
+> This roadmap describes optional and modular evolution paths.
+> Not all phases are intended to live in the core runtime.
 
 This roadmap transforms **Gojinn** from a high-performance runtime into a **Sovereign Cloud Platform**.
 Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernetes with a single, secure, and intelligent binary.
@@ -49,7 +48,7 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 ---
 
 ## 🚀 PART II: THE EXPANSION (Current Focus)
-*Democratizing access and securing the perimeter.*
+*Democratizing access, securing the perimeter, and enabling intelligence.*
 
 ### 🟤 Phase 6: Polyglot Support (DONE v0.6.0)
 *Don't force users to learn Rust/Go. Support the ecosystem.*
@@ -58,7 +57,7 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 - [x] **PHP Adapter:** Support for PHP 8.2 (VMware Build) via CGI-style execution.
 - [x] **Ruby Adapter:** Support for Ruby 3.2 (VMware Build) with library loading.
 - [x] **.NET / C# Adapter:** Support for C# 8.0 via WASI SDK (Enterprise).
-- [x] **Unified Build System:** Implemented via `Makefile` (Replaces `gojinn build` CLI for flexibility).
+- [x] **Unified Build System:** Implemented via `Makefile`.
 
 ### 🛡️ Phase 7: The Fortress (Security Hardening) (DONE v0.7.0)
 *Mathematical guarantees against bad code and attacks.*
@@ -71,37 +70,57 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 *Functions need to remember things.*
 - [x] **WASI-Virt Integration:** Virtualize file systems for persistent storage.
 - [x] **SQLite Mounts:** Allow functions to request a private SQLite file per tenant.
-- [x] **Object Storage Bindings:** Native S3-compatible interface for WASM.
+- [x] **Object Storage Bindings:** Native S3-compatible interface for WASM (MinIO/AWS).
 
 ### ⚡ Phase 9: Async & Event-Driven
 *Handling tasks beyond the HTTP request lifecycle.*
-- [ ] **Cron Triggers:** Native scheduler (`@every 5m`).
-- [ ] **Fire-and-Forget:** Async execution queue (Internal).
-- [ ] **Dead Letter Queues:** Automatic retries for failed background jobs.
+- [x] **Cron Triggers:** Native scheduler (`@every 5m`).
+- [x] **Fire-and-Forget:** Async execution queue (Internal).
+- [x] **Dead Letter Queues:** Automatic retries for failed background jobs.
+- [x] **MQTT/Webhook Triggers:** Connect IoT and external events to functions.
 
-### 🧠 Phase 10: Edge AI Inference
-*Native Intelligence without external APIs.*
-- [ ] **Host LLM Bindings:** Embed `llama.cpp` to allow WASM to call Local AI.
-- [ ] **Zero-Copy Inference:** Shared memory between WASM and Model.
+### 🧠 Phase 10: Hybrid AI Engine
+*Democratizing AI access within the sandbox.*
+- [ ] **Host AI Bindings:** Unified interface for WASM to call LLMs.
+- [ ] **Provider Agnostic:** Support via Caddyfile for OpenAI, Anthropic, Gemini, and **Ollama (Local/Free)**.
+- [ ] **Smart Caching:** Semantic caching to reduce inference costs and latency.
 
 ---
 
-## 🌐 PART III: THE SOVEREIGN CLOUD (Future)
+## 🛡️ PART III: OPERATIONAL MATURITY
+*Tools required to run Gojinn safely on the open internet.*
+
+### 🚦 Phase 11: The Gatekeeper (Traffic Control)
+*Protecting the Sovereign Cloud from abuse.*
+- [ ] **Tenant Identity:** Simple Authentication (Basic Auth / Bearer Token) via Caddyfile.
+- [ ] **Rate Limiting:** Per-function or per-token request limits.
+- [ ] **Egress Filtering:** Control which external URLs functions can access.
+- [ ] **CORS Management:** Granular browser access control.
+
+### 📊 Phase 12: The Accountant (Telemetry & Quotas)
+*Knowing where resources are going.*
+- [ ] **Usage Events:** Emit structured events (Duration, RAM, AI Tokens) for external analysis.
+- [ ] **Hard Quotas:** Automatically kill functions exceeding daily/monthly resource caps.
+- [ ] **Plugin System:** Allow WASM middlewares for custom logging/telemetry.
+
+---
+
+## 🌐 PART IV: THE SOVEREIGN CLOUD (Future)
 *Distributed systems, Blockchain, and Code Sovereignty.*
 
-### 🔗 Phase 11: Code Sovereignty
+### 🔗 Phase 13: Code Sovereignty
 *Trust, Verify, and Sign.*
 - [ ] **Cryptographic Signing:** Blockchain/Ledger integration to verify WASM authorship.
 - [ ] **Supply Chain Security:** Gojinn only runs modules signed by trusted keys.
 - [ ] **Immutable Registry:** Hash-based addressing for functions.
 
-### 🕸️ Phase 12: The Mesh (P2P Federation)
+### 🕸️ Phase 14: The Mesh (P2P Federation)
 *Scale without a master node.*
 - [ ] **P2P Discovery:** Gossip protocol (Memberlist/WireGuard) for node discovery.
 - [ ] **Cluster Storage:** Sync Certificates and KV across nodes.
 - [ ] **Edge Routing:** Automatic request routing to the nearest available node.
 
-### 🎭 Phase 13: Stateful Actors
+### 🎭 Phase 15: Stateful Actors
 *Real-time applications without external DBs.*
 - [ ] **Actor Model:** Durable Objects implementation (State lives in RAM/Disk).
 - [ ] **Websockets Support:** massive concurrent connections handling.
@@ -109,24 +128,24 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 
 ---
 
-## 🔮 PART IV: THE NEXT GENERATION (Visionary)
+## 🔮 PART V: THE NEXT GENERATION (Visionary)
 *Redefining Developer Experience.*
 
-### ⏪ Phase 14: Time-Travel Debugging
+### ⏪ Phase 16: Time-Travel Debugging
 - [ ] **Deterministic Replay:** Record inputs to replay crashes locally.
 - [ ] **Snapshotting:** Save/Restore full VM state.
 
-### 🖥️ Phase 15: Gojinn Studio
+### 🖥️ Phase 17: Gojinn Studio
 - [ ] **Visual Control Plane:** Web GUI for topology, metrics, and management.
 - [ ] **Hot Patching:** Update variables via UI.
-- [ ] **Language-Agnostic CLI:** Unified gojinn build command (replacing Makefile).
-- [ ] **Ecosystem Split:** Migrate examples and SDKs to dedicated repositories (e.g., `gojinn-examples`) for cleaner architecture.
+- [ ] **Language-Agnostic CLI:** Unified `gojinn` command family.
 
-### 🤖 Phase 16: The Agentic Interface (MCP)
+### 🤖 Phase 18: The Agentic Interface (MCP)
 - [ ] **Auto-MCP Generation:** Expose WASM functions as tools for Claude/OpenAI agents.
 - [ ] **Semantic Router:** Natural language routing to functions.
+- [ ] **Self-Healing:** AI-driven log analysis and fix suggestions.
 
-### 💎 Phase 17: The Sync Engine (Local-First)
+### 💎 Phase 19: The Sync Engine (Local-First)
 - [ ] **SQLite Replication Protocol:** Sync browser-based SQLite with Server SQLite.
 - [ ] **CRDT Integration:** Conflict-free data merging for offline-first apps.
 
@@ -134,6 +153,7 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 
 ### ❌ Explicit Non-Goals
 To keep the project focused, we will **NOT** build:
+* **No "SaaS-in-a-Box":** We will not build billing engines, payment gateways, or multi-tier subscription logic into the core. Gojinn is an engine, not a storefront.
 * Proprietary/Vendor-locked APIs.
 * Replacement for heavy OS-level containers (Docker).
 * "Magic" opaque networking layers.

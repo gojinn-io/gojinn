@@ -1,8 +1,11 @@
 package gojinn
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"time"
 
 	"github.com/dustin/go-humanize"
 	"github.com/tetratelabs/wazero"
@@ -207,6 +210,35 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			stack[0] = uint64(bytesToWrite)
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("host_s3_get").
+		NewFunctionBuilder().
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
+			filePtr := uint32(stack[0])
+			fileLen := uint32(stack[1])
+			payloadPtr := uint32(stack[2])
+			payloadLen := uint32(stack[3])
+
+			fBytes, ok := mod.Memory().Read(filePtr, fileLen)
+			if !ok {
+				stack[0] = 1
+				return
+			}
+			wasmFile := string(fBytes)
+
+			pBytes, ok := mod.Memory().Read(payloadPtr, payloadLen)
+			if !ok {
+				stack[0] = 1
+				return
+			}
+			payload := string(pBytes)
+
+			go func() {
+				r.runAsyncJob(wasmFile, payload)
+			}()
+
+			r.logger.Info("Job enqueued in background", zap.String("file", wasmFile))
+			stack[0] = 0
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
+		Export("host_enqueue").
 		Instantiate(ctxWazero)
 
 	if err != nil {
@@ -221,4 +253,69 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 	}
 
 	return &EnginePair{Runtime: engine, Code: code}, nil
+}
+
+func (r *Gojinn) runBackgroundJob(wasmFile string) {
+	cronPayload := `{"event_type": "cron", "source": "gojinn_scheduler"}`
+	r.runAsyncJob(wasmFile, cronPayload)
+}
+
+func (r *Gojinn) runAsyncJob(wasmFile, payload string) {
+	const maxRetries = 3
+	var err error
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		err = r.executeOneShot(wasmFile, payload)
+
+		if err == nil {
+			r.logger.Debug("Async job finished",
+				zap.String("file", wasmFile),
+				zap.Int("attempt", attempt))
+			return
+		}
+
+		r.logger.Warn("Async job failed",
+			zap.String("file", wasmFile),
+			zap.Int("attempt", attempt),
+			zap.Error(err))
+
+		if attempt < maxRetries {
+			time.Sleep(time.Duration(attempt) * time.Second)
+		}
+	}
+
+	r.moveToDLQ(wasmFile, payload, err)
+}
+
+func (r *Gojinn) executeOneShot(wasmFile, payload string) error {
+	wasmBytes, err := os.ReadFile(wasmFile)
+	if err != nil {
+		return fmt.Errorf("read file error: %w", err)
+	}
+
+	eng, err := r.createWorker(wasmBytes)
+	if err != nil {
+		return fmt.Errorf("create worker error: %w", err)
+	}
+	defer eng.Runtime.Close(context.Background())
+
+	modConfig := wazero.NewModuleConfig().
+		WithStdin(bytes.NewBufferString(payload)).
+		WithStdout(os.Stdout).
+		WithStderr(os.Stderr)
+
+	mod, err := eng.Runtime.InstantiateModule(context.Background(), eng.Code, modConfig)
+	if err != nil {
+		return err
+	}
+
+	return mod.Close(context.Background())
+}
+
+func (r *Gojinn) moveToDLQ(wasmFile, payload string, err error) {
+	r.logger.Error("💀 [DLQ] Job moved to Dead Letter Queue",
+		zap.String("file", wasmFile),
+		zap.String("payload", payload),
+		zap.String("final_error", err.Error()),
+	)
 }
