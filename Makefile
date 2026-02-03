@@ -14,7 +14,7 @@ URL_RUBY   := "https://github.com/vmware-labs/webassembly-language-runtimes/rele
 
 LDFLAGS := -ldflags "-s -w"
 
-.PHONY: all clean run dev build-host build-funcs build-polyglot download-runtimes
+.PHONY: all clean run dev build-host build-funcs build-polyglot download-runtimes build-signer sign-funcs secure
 
 all: download-runtimes build-funcs build-polyglot build-host
 
@@ -84,3 +84,20 @@ dev: build-funcs build-polyglot
 
 clean:
 	@rm -f $(CADDY_BIN) caddy functions/*.wasm
+
+# --- 5. Security Tools  ---
+build-signer:
+	@echo "🔑 Building Signer Tool..."
+	@go build -o gojinn-signer cmd/signer/main.go
+
+sign-funcs: build-signer build-funcs
+	@echo "✍️  Signing core functions..."
+	@# Assinando o counter.wasm (usado no teste)
+	@./gojinn-signer --action=sign --key=paulo.priv --file=functions/counter.wasm
+	@# Se quiser assinar outros, adicione as linhas aqui:
+	@# ./gojinn-signer --action=sign --key=paulo.priv --file=functions/sql.wasm
+	@echo "✅ Functions signed."
+
+secure: sign-funcs
+	@echo "🛡️  Starting Gojinn in Secure Mode..."
+	@go run cmd/caddy/main.go run --config Caddyfile.secure

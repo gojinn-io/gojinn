@@ -1,8 +1,9 @@
 #######################################
-# Binaries & Executáveis
+# Binaries / Executables
 #######################################
 gojinn
 gojinn-server
+gojinn-signer
 caddy
 *.exe
 *.dll
@@ -10,6 +11,13 @@ caddy
 *.dylib
 *.test
 *.zip
+
+#######################################
+# Security / Keys
+#######################################
+*.priv
+*.key
+*.pub
 
 #######################################
 # Build Artifacts / Output
@@ -39,6 +47,7 @@ go.work.sum
 # Caddy
 #######################################
 Caddyfile
+Caddyfile.secure
 caddy_data/
 caddy_config/
 autosave.json

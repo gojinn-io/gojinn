@@ -29,6 +29,8 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	m.APIKeys = []string{}
 	m.CorsOrigins = []string{}
 
+	m.TrustedKeys = []string{}
+
 	m.RateLimit = 0
 	m.RateBurst = 0
 
@@ -117,6 +119,22 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			case "s3_secret_key":
 				if h.NextArg() {
 					m.S3SecretKey = h.Val()
+				}
+
+			case "security":
+				for nesting := h.Nesting(); h.NextBlock(nesting); {
+					switch h.Val() {
+					case "policy":
+						if !h.NextArg() {
+							return nil, h.Err("security policy expects 'strict' or 'audit'")
+						}
+						m.SecurityPolicy = h.Val()
+					case "trusted_key":
+						if !h.NextArg() {
+							return nil, h.Err("trusted_key expects a hex public key string")
+						}
+						m.TrustedKeys = append(m.TrustedKeys, h.Val())
+					}
 				}
 
 			case "cron":

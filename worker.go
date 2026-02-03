@@ -318,9 +318,9 @@ func (r *Gojinn) runAsyncJob(wasmFile, payload string) {
 }
 
 func (r *Gojinn) executeOneShot(wasmFile, payload string) error {
-	wasmBytes, err := os.ReadFile(wasmFile)
+	wasmBytes, err := r.loadWasmSecurely(wasmFile)
 	if err != nil {
-		return fmt.Errorf("read file error: %w", err)
+		return fmt.Errorf("security check failed for async job: %w", err)
 	}
 
 	eng, err := r.createWorker(wasmBytes)

@@ -2,6 +2,7 @@ package gojinn
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -21,6 +22,8 @@ import (
 	"github.com/robfig/cron/v3"
 	"go.uber.org/zap"
 	"golang.org/x/time/rate"
+
+	"github.com/pauloappbr/gojinn/pkg/sovereign"
 )
 
 func init() {
@@ -36,6 +39,9 @@ type Gojinn struct {
 	MemoryLimit string            `json:"memory_limit,omitempty"`
 	PoolSize    int               `json:"pool_size,omitempty"`
 	DebugSecret string            `json:"debug_secret,omitempty"`
+
+	TrustedKeys    []string `json:"trusted_keys,omitempty"`
+	SecurityPolicy string   `json:"security_policy,omitempty"`
 
 	FuelLimit uint64            `json:"fuel_limit,omitempty"`
 	Mounts    map[string]string `json:"mounts,omitempty"`
@@ -89,6 +95,46 @@ func (*Gojinn) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+func (g *Gojinn) loadWasmSecurely(path string) ([]byte, error) {
+	rawBytes, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read wasm file: %w", err)
+	}
+
+	if len(g.TrustedKeys) == 0 {
+		if g.SecurityPolicy == "strict" {
+			return nil, fmt.Errorf("security policy is strict but no trusted keys are defined")
+		}
+		return rawBytes, nil
+	}
+
+	g.logger.Debug("Verifying Code Sovereignty", zap.String("file", path))
+
+	var trusted []ed25519.PublicKey
+	for _, k := range g.TrustedKeys {
+		pk, err := sovereign.ParsePublicKey(k)
+		if err != nil {
+			return nil, fmt.Errorf("invalid trusted key config: %w", err)
+		}
+		trusted = append(trusted, pk)
+	}
+
+	cleanBytes, err := sovereign.VerifyWasm(rawBytes, trusted)
+	if err != nil {
+		if g.SecurityPolicy == "strict" {
+			g.logger.Error("BLOCKING UNSIGNED MODULE", zap.String("file", path), zap.Error(err))
+			return nil, fmt.Errorf("module signature verification failed: %w", err)
+		}
+		g.logger.Warn("Security Audit Failed (Allowing run due to audit policy)",
+			zap.String("file", path),
+			zap.Error(err))
+		return rawBytes, nil
+	}
+
+	g.logger.Info("Module Signature Verified", zap.String("file", path))
+	return cleanBytes, nil
+}
+
 func (r *Gojinn) Provision(ctx caddy.Context) error {
 	r.logger = ctx.Logger()
 	r.limiters = make(map[string]*rate.Limiter)
@@ -104,6 +150,11 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 		r.scheduler = cron.New(cron.WithSeconds())
 		for _, job := range r.CronJobs {
 			j := job
+
+			if _, err := r.loadWasmSecurely(j.WasmFile); err != nil {
+				return fmt.Errorf("cron job security check failed for %s: %w", j.WasmFile, err)
+			}
+
 			_, err := r.scheduler.AddFunc(j.Schedule, func() {
 				r.runBackgroundJob(j.WasmFile)
 			})
@@ -116,6 +167,12 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 	}
 
 	if r.MQTTBroker != "" {
+		for _, sub := range r.MQTTSubs {
+			if _, err := r.loadWasmSecurely(sub.WasmFile); err != nil {
+				return fmt.Errorf("mqtt handler security check failed for %s: %w", sub.WasmFile, err)
+			}
+		}
+
 		opts := mqtt.NewClientOptions()
 		opts.AddBroker(r.MQTTBroker)
 		if r.MQTTClientID != "" {
@@ -160,9 +217,10 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 
 	if r.Path != "" {
 		r.enginePool = make(chan *EnginePair, r.PoolSize)
-		wasmBytes, err := os.ReadFile(r.Path)
+
+		wasmBytes, err := r.loadWasmSecurely(r.Path)
 		if err != nil {
-			return fmt.Errorf("failed to read wasm file: %w", err)
+			return fmt.Errorf("failed to load sovereign module: %w", err)
 		}
 		r.logger.Info("provisioning worker pool", zap.Int("workers", r.PoolSize))
 

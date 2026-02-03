@@ -97,22 +97,22 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 - [x] **Egress Filtering:** Control which external URLs functions can access.
 - [x] **CORS Management:** Granular browser access control.
 
-### 📊 Phase 12: The Accountant (Telemetry & Quotas)
+### 📊 Phase 12: The Accountant (Telemetry & Quotas) (DONE v0.12.0)
 *Knowing where resources are going.*
-- [ ] **Usage Events:** Emit structured events (Duration, RAM, AI Tokens) for external analysis.
-- [ ] **Hard Quotas:** Automatically kill functions exceeding daily/monthly resource caps.
-- [ ] **Plugin System:** Allow WASM middlewares for custom logging/telemetry.
+- [x] **Usage Events:** Emit structured events (Duration, RAM, AI Tokens) for external analysis.
+- [x] **Hard Quotas:** Automatically kill functions exceeding daily/monthly resource caps.
+- [x] **Plugin System:** Allow WASM middlewares for custom logging/telemetry.
 
 ---
 
 ## 🌐 PART IV: THE SOVEREIGN CLOUD (Future)
 *Distributed systems, Blockchain, and Code Sovereignty.*
 
-### 🔗 Phase 13: Code Sovereignty
+### 🔗 Phase 13: Code Sovereignty (DONE v0.13.0)
 *Trust, Verify, and Sign.*
-- [ ] **Cryptographic Signing:** Blockchain/Ledger integration to verify WASM authorship.
-- [ ] **Supply Chain Security:** Gojinn only runs modules signed by trusted keys.
-- [ ] **Immutable Registry:** Hash-based addressing for functions.
+- [x] **Cryptographic Signing:** Native Ed25519 signing embedded in WASM binary (replaced Blockchain for offline sovereignty).
+- [x] **Supply Chain Security:** Runtime strictly enforces signature verification via Caddyfile policy.
+- [x] **Integrity Guarantee:** Mathematical proof that code hasn't been tampered with (Signature validates Content Hash).
 
 ### 🕸️ Phase 14: The Mesh (P2P Federation)
 *Scale without a master node.*
