@@ -12,6 +12,7 @@ import (
 	"github.com/tetratelabs/wazero/api"
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 	"go.uber.org/zap"
+	"nhooyr.io/websocket"
 )
 
 type EnginePair struct {
@@ -38,7 +39,6 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 	engine := wazero.NewRuntimeWithConfig(ctxWazero, rConfig)
 
 	_, err := engine.NewHostModuleBuilder("gojinn").
-		// LOGGING
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
 			level := uint32(stack[0])
@@ -56,8 +56,6 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			}
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{}).
 		Export("host_log").
-
-		// DB QUERY
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
 			queryPtr := uint32(stack[0])
@@ -92,8 +90,6 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			stack[0] = uint64(bytesToWrite)
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("host_db_query").
-
-		// KV SET (COM MESH BROADCAST 🕸️)
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
 			keyPtr := uint32(stack[0])
@@ -113,17 +109,12 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			}
 			val := string(vBytes)
 
-			// 1. Salva Local
 			r.kvStore.Store(key, val)
-
-			// 2. Broadcast P2P
 			if r.meshNode != nil {
 				r.meshNode.BroadcastKV(key, val)
 			}
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{}).
 		Export("host_kv_set").
-
-		// KV GET (CORRIGIDO PARA I64)
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
 			keyPtr := uint32(stack[0])
@@ -140,7 +131,6 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 
 			val, ok := r.kvStore.Load(key)
 			if !ok {
-				// Not Found: Retorna -1 (em uint64 é 0xFFFFFFFFFFFFFFFF)
 				stack[0] = 0xFFFFFFFFFFFFFFFF
 				return
 			}
@@ -159,10 +149,8 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			}
 
 			stack[0] = uint64(bytesToWrite)
-		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI64}). // <--- I64 AQUI
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI64}).
 		Export("host_kv_get").
-
-		// S3 PUT
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
 			keyPtr := uint32(stack[0])
@@ -191,8 +179,6 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			}
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("host_s3_put").
-
-		// S3 GET
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
 			keyPtr := uint32(stack[0])
@@ -227,8 +213,6 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			stack[0] = uint64(bytesToWrite)
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("host_s3_get").
-
-		// ENQUEUE JOB
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
 			filePtr := uint32(stack[0])
@@ -258,8 +242,6 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			stack[0] = 0
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("host_enqueue").
-
-		// ASK AI (CORRIGIDO PARA I64)
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
 			promptPtr := uint32(stack[0])
@@ -294,8 +276,90 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			}
 
 			stack[0] = uint64(bytesToWrite)
-		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI64}). // <--- I64 AQUI
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI64}).
 		Export("host_ask_ai").
+		NewFunctionBuilder().
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
+			val := ctx.Value(wsContextKey{})
+			if val == nil {
+				r.logger.Error("WS Upgrade called without HTTP context")
+				stack[0] = 0
+				return
+			}
+
+			httpCtx := val.(*HttpContext)
+
+			c, err := websocket.Accept(httpCtx.W, httpCtx.R, &websocket.AcceptOptions{
+				InsecureSkipVerify: true,
+			})
+			if err != nil {
+				r.logger.Error("Failed to accept websocket", zap.Error(err))
+				stack[0] = 0
+				return
+			}
+
+			httpCtx.WSConn = c
+			stack[0] = 1
+		}), []api.ValueType{}, []api.ValueType{api.ValueTypeI32}).
+		Export("host_ws_upgrade").
+		NewFunctionBuilder().
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
+			outPtr, outMaxLen := uint32(stack[0]), uint32(stack[1])
+
+			val := ctx.Value(wsContextKey{})
+			if val == nil {
+				stack[0] = 0
+				return
+			}
+			httpCtx := val.(*HttpContext)
+			if httpCtx.WSConn == nil {
+				stack[0] = 0
+				return
+			}
+
+			_, msgBytes, err := httpCtx.WSConn.Read(ctx)
+			if err != nil {
+				stack[0] = 0
+				return
+			}
+
+			bytesToWrite := uint32(len(msgBytes))
+			if bytesToWrite > outMaxLen {
+				bytesToWrite = outMaxLen
+			}
+
+			if !mod.Memory().Write(outPtr, msgBytes[:bytesToWrite]) {
+				stack[0] = 0
+				return
+			}
+
+			stack[0] = uint64(bytesToWrite)
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI64}).
+		Export("host_ws_read").
+		NewFunctionBuilder().
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
+			msgPtr, msgLen := uint32(stack[0]), uint32(stack[1])
+
+			val := ctx.Value(wsContextKey{})
+			if val == nil {
+				return
+			}
+			httpCtx := val.(*HttpContext)
+			if httpCtx.WSConn == nil {
+				return
+			}
+
+			msgBytes, ok := mod.Memory().Read(msgPtr, msgLen)
+			if !ok {
+				return
+			}
+
+			err := httpCtx.WSConn.Write(ctx, websocket.MessageText, msgBytes)
+			if err != nil {
+				r.logger.Error("WS Write failed", zap.Error(err))
+			}
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{}).
+		Export("host_ws_write").
 		Instantiate(ctxWazero)
 
 	if err != nil {
@@ -339,7 +403,6 @@ func (r *Gojinn) runAsyncJob(wasmFile, payload string) {
 }
 
 func (r *Gojinn) executeOneShot(wasmFile, payload string) error {
-	// 🛡️ SECURITY UPDATE (Fase 13):
 	wasmBytes, err := r.loadWasmSecurely(wasmFile)
 	if err != nil {
 		return fmt.Errorf("security check failed for async job: %w", err)

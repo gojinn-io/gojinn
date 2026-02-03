@@ -7,9 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net" // NOVO: Para separar IP:Porta
+	"net"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -20,15 +19,107 @@ import (
 )
 
 var bufferPool = sync.Pool{
-	New: func() interface{} {
-		return new(bytes.Buffer)
-	},
+	New: func() interface{} { return new(bytes.Buffer) },
 }
 
 func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddyhttp.Handler) error {
 	start := time.Now()
 
-	// 1. CORS MANAGEMENT (Phase 11)
+	if err := r.handleMiddleware(rw, req); err != nil {
+		return err
+	}
+
+	r.metrics.active.WithLabelValues(r.Path).Inc()
+	defer r.metrics.active.WithLabelValues(r.Path).Dec()
+
+	var pair *EnginePair
+	select {
+	case pair = <-r.enginePool:
+	case <-time.After(time.Duration(r.Timeout)):
+		return caddyhttp.Error(http.StatusServiceUnavailable, fmt.Errorf("worker pool exhausted"))
+	}
+
+	defer func() {
+		select {
+		case r.enginePool <- pair:
+		default:
+			pair.Runtime.Close(context.Background())
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(req.Context(), time.Duration(r.Timeout))
+	defer cancel()
+
+	stdoutBuf := bufferPool.Get().(*bytes.Buffer)
+	stdoutBuf.Reset()
+	defer bufferPool.Put(stdoutBuf)
+
+	stderrBuf := bufferPool.Get().(*bytes.Buffer)
+	stderrBuf.Reset()
+	defer bufferPool.Put(stderrBuf)
+
+	bodyBytes, _ := io.ReadAll(req.Body)
+	req.Body.Close()
+
+	reqPayload := struct {
+		Method  string              `json:"method"`
+		URI     string              `json:"uri"`
+		Headers map[string][]string `json:"headers"`
+		Body    string              `json:"body"`
+	}{
+		Method:  req.Method,
+		URI:     req.RequestURI,
+		Headers: req.Header,
+		Body:    string(bodyBytes),
+	}
+	inputJSON, _ := json.Marshal(reqPayload)
+
+	fsConfig := wazero.NewFSConfig()
+	for host, guest := range r.Mounts {
+		fsConfig = fsConfig.WithDirMount(host, guest)
+	}
+
+	modConfig := wazero.NewModuleConfig().
+		WithStdout(stdoutBuf).
+		WithStderr(stderrBuf).
+		WithStdin(bytes.NewReader(inputJSON)).
+		WithSysWalltime().
+		WithSysNanotime().
+		WithRandSource(rand.Reader).
+		WithFSConfig(fsConfig)
+
+	for k, v := range r.Env {
+		modConfig = modConfig.WithEnv(k, v)
+	}
+
+	httpCtx := &HttpContext{
+		W: rw,
+		R: req,
+	}
+	ctxWithHTTP := context.WithValue(ctx, wsContextKey{}, httpCtx)
+
+	mod, err := pair.Runtime.InstantiateModule(ctxWithHTTP, pair.Code, modConfig)
+	if err != nil {
+		if ctxWithHTTP.Err() == context.Canceled {
+			return nil
+		}
+		r.logger.Error("WASM Execution Failed", zap.Error(err), zap.String("stderr", stderrBuf.String()))
+		return caddyhttp.Error(http.StatusInternalServerError, err)
+	}
+	defer mod.Close(ctxWithHTTP)
+
+	if httpCtx.WSConn != nil {
+		return nil
+	}
+
+	handleFunc := mod.ExportedFunction("handle")
+	if handleFunc != nil {
+	}
+
+	return r.writeResponse(rw, stdoutBuf.Bytes(), time.Since(start).Seconds())
+}
+
+func (r *Gojinn) handleMiddleware(rw http.ResponseWriter, req *http.Request) error {
 	origin := req.Header.Get("Origin")
 	if len(r.CorsOrigins) > 0 && origin != "" {
 		allowed := false
@@ -38,24 +129,18 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 				break
 			}
 		}
-
 		if allowed {
 			rw.Header().Set("Access-Control-Allow-Origin", origin)
 			rw.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
 			rw.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, X-Gojinn-Debug, traceparent")
 			rw.Header().Set("Access-Control-Allow-Credentials", "true")
 		}
-
 		if req.Method == "OPTIONS" {
 			rw.WriteHeader(http.StatusOK)
 			return nil
 		}
 	}
-
-	// 2. AUTHENTICATION (Phase 11)
-	// Também define a identidade para o Rate Limit
 	tenantID := ""
-
 	if len(r.APIKeys) > 0 {
 		clientKey := req.Header.Get("X-API-Key")
 		if clientKey == "" {
@@ -64,7 +149,6 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 				clientKey = strings.TrimPrefix(authHeader, "Bearer ")
 			}
 		}
-
 		authorized := false
 		for _, k := range r.APIKeys {
 			if clientKey == k {
@@ -72,209 +156,48 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 				break
 			}
 		}
-
 		if !authorized {
-			r.logger.Warn("🔒 Access Denied: Invalid or missing API Key", zap.String("ip", req.RemoteAddr))
-			return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("unauthorized: invalid api key"))
+			return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("unauthorized"))
 		}
-
-		tenantID = clientKey // Usa a chave como ID único
+		tenantID = clientKey
 	} else {
-		// Se não tem Auth configurada, usa o IP como ID
-		host, _, err := net.SplitHostPort(req.RemoteAddr)
-		if err != nil {
-			host = req.RemoteAddr
-		}
+		host, _, _ := net.SplitHostPort(req.RemoteAddr)
 		tenantID = host
 	}
-
-	// --- 3. RATE LIMITING (Phase 12) ---
 	if r.RateLimit > 0 {
-		// Obtém (ou cria) o limitador para este cliente
 		limiter := r.getLimiter(tenantID)
-
 		if !limiter.Allow() {
-			r.logger.Warn("🚦 Rate Limit Exceeded", zap.String("tenant", tenantID))
-
-			rw.Header().Set("Retry-After", "1") // Sugere tentar novamente em 1s
 			rw.WriteHeader(http.StatusTooManyRequests)
-			rw.Write([]byte(`{"error": "Too Many Requests", "retry_after": 1}`))
-			return nil
+			return fmt.Errorf("rate limit exceeded")
 		}
 	}
-	// -----------------------------------
+	return nil
+}
 
-	r.metrics.active.WithLabelValues(r.Path).Inc()
-	defer r.metrics.active.WithLabelValues(r.Path).Dec()
-
-	pair := <-r.enginePool
-	defer func() { r.enginePool <- pair }()
-
-	ctx, cancel := context.WithTimeout(req.Context(), time.Duration(r.Timeout))
-	defer cancel()
-
-	isDebug := r.DebugSecret != "" && req.Header.Get("X-Gojinn-Debug") == r.DebugSecret
-
-	stderrBuf := bufferPool.Get().(*bytes.Buffer)
-	stderrBuf.Reset()
-	defer bufferPool.Put(stderrBuf)
-
-	var stderrTarget io.Writer = io.MultiWriter(os.Stderr, stderrBuf)
-	var debugLogBuf *bytes.Buffer
-
-	if isDebug {
-		debugLogBuf = bufferPool.Get().(*bytes.Buffer)
-		debugLogBuf.Reset()
-		defer bufferPool.Put(debugLogBuf)
-
-		stderrTarget = io.MultiWriter(os.Stderr, debugLogBuf)
+func (r *Gojinn) writeResponse(rw http.ResponseWriter, outBytes []byte, duration float64) error {
+	if len(outBytes) == 0 {
+		return caddyhttp.Error(http.StatusBadGateway, fmt.Errorf("empty response from wasm"))
 	}
-
-	bodyBytes, err := io.ReadAll(req.Body)
-	if err != nil {
-		return err
-	}
-	traceID := req.Header.Get("traceparent")
-
-	reqPayload := struct {
-		Method  string              `json:"method"`
-		URI     string              `json:"uri"`
+	var resp struct {
+		Status  int                 `json:"status"`
 		Headers map[string][]string `json:"headers"`
 		Body    string              `json:"body"`
-		TraceID string              `json:"trace_id,omitempty"`
-	}{
-		Method:  req.Method,
-		URI:     req.RequestURI,
-		Headers: req.Header,
-		Body:    string(bodyBytes),
-		TraceID: traceID,
 	}
-
-	inputJSON, err := json.Marshal(reqPayload)
-	if err != nil {
-		return caddyhttp.Error(http.StatusInternalServerError, err)
+	if err := json.Unmarshal(outBytes, &resp); err != nil {
+		rw.Write(outBytes)
+		return nil
 	}
-
-	stdoutBuf := bufferPool.Get().(*bytes.Buffer)
-	stdoutBuf.Reset()
-	defer bufferPool.Put(stdoutBuf)
-
-	fullArgs := append([]string{"python"}, r.Args...)
-
-	fsConfig := wazero.NewFSConfig()
-
-	if len(r.Mounts) > 0 {
-		for hostDir, guestDir := range r.Mounts {
-			fsConfig = fsConfig.WithDirMount(hostDir, guestDir)
-		}
-	}
-
-	config := wazero.NewModuleConfig().
-		WithStdout(stdoutBuf).
-		WithStderr(stderrTarget).
-		WithStdin(bytes.NewReader(inputJSON)).
-		WithArgs(fullArgs...).
-		WithSysWalltime().
-		WithSysNanotime().
-		WithRandSource(rand.Reader).
-		WithFSConfig(fsConfig)
-
-	for k, v := range r.Env {
-		config = config.WithEnv(k, v)
-	}
-
-	instance, err := pair.Runtime.InstantiateModule(ctx, pair.Code, config)
-
-	duration := time.Since(start).Seconds()
-	var statusLabel string
-
-	injectDebugLogs := func() {
-		if isDebug && debugLogBuf.Len() > 0 {
-			logs := debugLogBuf.String()
-			if len(logs) > 4096 {
-				logs = logs[:4096] + "...(truncated)"
-			}
-			rw.Header().Set("X-Gojinn-Logs", logs)
-		}
-	}
-
-	if err != nil {
-		statusLabel = "500"
-		if ctx.Err() == context.DeadlineExceeded {
-			statusLabel = "504"
-		}
-		r.metrics.duration.WithLabelValues(r.Path, statusLabel).Observe(duration)
-
-		r.logger.Error("wasm execution failed",
-			zap.Error(err),
-			zap.String("stderr_preview", stderrBuf.String()),
-		)
-
-		injectDebugLogs()
-		return caddyhttp.Error(http.StatusInternalServerError, err)
-	}
-	defer instance.Close(ctx)
-
-	if stdoutBuf.Len() == 0 {
-		statusLabel = "502"
-		r.metrics.duration.WithLabelValues(r.Path, statusLabel).Observe(duration)
-
-		injectDebugLogs()
-
-		jsError := stderrBuf.String()
-		if jsError == "" {
-			jsError = "No stderr output. (Possible causes: script not found, early exit)"
-		}
-
-		r.logger.Error("WASM Empty Output", zap.String("stderr", jsError))
-
-		return caddyhttp.Error(http.StatusBadGateway, fmt.Errorf("empty response from WASM. Stderr: %s", jsError))
-	}
-
-	var respPayload struct {
-		Status  int                    `json:"status"`
-		Headers map[string]interface{} `json:"headers"`
-		Body    string                 `json:"body"`
-	}
-
-	if err := json.Unmarshal(stdoutBuf.Bytes(), &respPayload); err != nil {
-		statusLabel = "502"
-		r.metrics.duration.WithLabelValues(r.Path, statusLabel).Observe(duration)
-
-		rawOutput := stdoutBuf.String()
-		r.logger.Error("Invalid JSON from WASM", zap.String("output", rawOutput), zap.Error(err))
-
-		return caddyhttp.Error(http.StatusBadGateway, fmt.Errorf("invalid json output: %s. Error: %v", rawOutput, err))
-	}
-
-	if respPayload.Status == 0 {
-		respPayload.Status = 200
-	}
-	statusLabel = fmt.Sprintf("%d", respPayload.Status)
-	r.metrics.duration.WithLabelValues(r.Path, statusLabel).Observe(duration)
-
-	injectDebugLogs()
-
-	for k, v := range respPayload.Headers {
-		switch val := v.(type) {
-		case string:
+	for k, v := range resp.Headers {
+		for _, val := range v {
 			rw.Header().Add(k, val)
-		case []interface{}:
-			for _, item := range val {
-				if strVal, ok := item.(string); ok {
-					rw.Header().Add(k, strVal)
-				}
-			}
-		case []string:
-			for _, strVal := range val {
-				rw.Header().Add(k, strVal)
-			}
 		}
 	}
-	rw.WriteHeader(respPayload.Status)
-	if _, err := rw.Write([]byte(respPayload.Body)); err != nil {
-		r.logger.Error("failed to write response body", zap.Error(err))
+	if resp.Status == 0 {
+		resp.Status = 200
 	}
-
+	rw.WriteHeader(resp.Status)
+	rw.Write([]byte(resp.Body))
+	statusLabel := fmt.Sprintf("%d", resp.Status)
+	r.metrics.duration.WithLabelValues(r.Path, statusLabel).Observe(duration)
 	return nil
 }

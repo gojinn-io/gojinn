@@ -48,6 +48,7 @@ go.work.sum
 #######################################
 Caddyfile
 Caddyfile.secure
+Caddyfile.mesh
 caddy_data/
 caddy_config/
 autosave.json

@@ -22,6 +22,7 @@ import (
 	"github.com/robfig/cron/v3"
 	"go.uber.org/zap"
 	"golang.org/x/time/rate"
+	"nhooyr.io/websocket"
 
 	"github.com/pauloappbr/gojinn/pkg/mesh"
 	"github.com/pauloappbr/gojinn/pkg/sovereign"
@@ -44,7 +45,6 @@ type Gojinn struct {
 	TrustedKeys    []string `json:"trusted_keys,omitempty"`
 	SecurityPolicy string   `json:"security_policy,omitempty"`
 
-	// --- 🕸️ MESH / CLUSTER (Fase 14) ---
 	ClusterPort   int      `json:"cluster_port,omitempty"`
 	ClusterSeeds  []string `json:"cluster_seeds,omitempty"`
 	ClusterSecret string   `json:"cluster_secret,omitempty"`
@@ -108,14 +108,14 @@ func (g *Gojinn) loadWasmSecurely(path string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to read wasm file: %w", err)
 	}
 
+	g.logger.Debug("LoadWasm Raw", zap.String("file", path), zap.Int("size", len(rawBytes)))
+
 	if len(g.TrustedKeys) == 0 {
 		if g.SecurityPolicy == "strict" {
 			return nil, fmt.Errorf("security policy is strict but no trusted keys are defined")
 		}
 		return rawBytes, nil
 	}
-
-	g.logger.Debug("Verifying Code Sovereignty", zap.String("file", path))
 
 	var trusted []ed25519.PublicKey
 	for _, k := range g.TrustedKeys {
@@ -138,7 +138,7 @@ func (g *Gojinn) loadWasmSecurely(path string) ([]byte, error) {
 		return rawBytes, nil
 	}
 
-	g.logger.Info("Module Signature Verified", zap.String("file", path))
+	g.logger.Info("Module Signature Verified", zap.String("file", path), zap.Int("size_clean", len(cleanBytes)))
 	return cleanBytes, nil
 }
 
@@ -153,24 +153,20 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("failed to setup database: %w", err)
 	}
 
-	// --- 🕸️ MESH INIT (Phase 14) ---
 	if r.ClusterPort > 0 {
-		r.logger.Info("🕸️ Initializing Mesh Node", zap.Int("port", r.ClusterPort))
+		r.logger.Info("Initializing Mesh Node", zap.Int("port", r.ClusterPort))
 
-		// 1. NewNode agora recebe os metadados iniciais (Funções e Porta API)
 		node, err := mesh.NewNode(r.ClusterPort, r.ClusterPort, r.ClusterSeeds, r.ClusterSecret, []string{r.Path}, 8080)
 		if err != nil {
 			return fmt.Errorf("failed to start mesh: %w", err)
 		}
 		r.meshNode = node
 
-		// 2. Callback de Sincronização: O que fazer quando chegar um KV de fora?
 		r.meshNode.OnKVUpdate = func(key, value string) {
-			r.logger.Debug("🕸️ Mesh KV Sync (Remote Update)", zap.String("key", key), zap.String("val_size", fmt.Sprintf("%d bytes", len(value))))
+			r.logger.Debug("Mesh KV Sync (Remote Update)", zap.String("key", key), zap.String("val_size", fmt.Sprintf("%d bytes", len(value))))
 			r.kvStore.Store(key, value)
 		}
 
-		// Log periódico de topologia
 		go func() {
 			time.Sleep(2 * time.Second)
 			ticker := time.NewTicker(30 * time.Second)
@@ -181,7 +177,7 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 				case <-ticker.C:
 					if r.meshNode != nil && r.meshNode.List != nil {
 						peers := r.meshNode.GetPeers()
-						r.logger.Info("🕸️ Mesh Topology",
+						r.logger.Info("Mesh Topology",
 							zap.Int("members_count", len(peers)),
 							zap.Strings("members", peers))
 					}
@@ -288,12 +284,10 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 }
 
 func (r *Gojinn) Cleanup() error {
-	// --- 🕸️ MESH SHUTDOWN ---
 	if r.meshNode != nil {
-		r.logger.Info("🕸️ Leaving Mesh Cluster...")
+		r.logger.Info("Leaving Mesh Cluster...")
 		r.meshNode.Shutdown()
 	}
-
 	if r.mqttClient != nil && r.mqttClient.IsConnected() {
 		r.mqttClient.Disconnect(250)
 	}
@@ -309,11 +303,9 @@ func (r *Gojinn) Cleanup() error {
 	return nil
 }
 
-// ... (Resto do arquivo permanece inalterado) ...
 func (r *Gojinn) getLimiter(key string) *rate.Limiter {
 	r.limitersMu.Lock()
 	defer r.limitersMu.Unlock()
-
 	limiter, exists := r.limiters[key]
 	if !exists {
 		burst := r.RateBurst
@@ -323,11 +315,9 @@ func (r *Gojinn) getLimiter(key string) *rate.Limiter {
 		if burst == 0 {
 			burst = 1
 		}
-
 		limiter = rate.NewLimiter(rate.Limit(r.RateLimit), burst)
 		r.limiters[key] = limiter
 	}
-
 	return limiter
 }
 
@@ -358,7 +348,6 @@ func (g *Gojinn) askAI(prompt string) (string, error) {
 
 	cacheKey := fmt.Sprintf("%s:%s", model, hashString(prompt))
 	if cachedVal, ok := g.aiCache.Load(cacheKey); ok {
-		g.logger.Debug("🧠 AI Cache Hit", zap.String("key", cacheKey))
 		return cachedVal.(string), nil
 	}
 
@@ -370,29 +359,24 @@ func (g *Gojinn) askAI(prompt string) (string, error) {
 			endpoint = "https://api.openai.com/v1/chat/completions"
 		}
 	}
-
 	if len(g.AllowedHosts) > 0 {
 		u, err := url.Parse(endpoint)
-		if err != nil {
-			return "", fmt.Errorf("invalid endpoint url")
-		}
-
-		allowed := false
-		hostname := u.Hostname()
-		if provider == "ollama" && (hostname == "localhost" || hostname == "127.0.0.1") {
-			allowed = true
-		} else {
-			for _, host := range g.AllowedHosts {
-				if strings.Contains(hostname, host) {
-					allowed = true
-					break
+		if err == nil {
+			allowed := false
+			hostname := u.Hostname()
+			if provider == "ollama" && (hostname == "localhost" || hostname == "127.0.0.1") {
+				allowed = true
+			} else {
+				for _, host := range g.AllowedHosts {
+					if strings.Contains(hostname, host) {
+						allowed = true
+						break
+					}
 				}
 			}
-		}
-
-		if !allowed {
-			g.logger.Warn("🚫 Egress Blocked", zap.String("target", hostname), zap.Strings("allowed", g.AllowedHosts))
-			return "", fmt.Errorf("egress denied to %s", hostname)
+			if !allowed {
+				return "", fmt.Errorf("egress denied to %s", hostname)
+			}
 		}
 	}
 
@@ -404,13 +388,11 @@ func (g *Gojinn) askAI(prompt string) (string, error) {
 			{Role: "user", Content: prompt},
 		},
 	}
-
 	jsonData, _ := json.Marshal(reqBody)
 	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return "", err
 	}
-
 	req.Header.Set("Content-Type", "application/json")
 	if g.AIToken != "" {
 		req.Header.Set("Authorization", "Bearer "+g.AIToken)
@@ -435,13 +417,9 @@ func (g *Gojinn) askAI(prompt string) (string, error) {
 
 	if len(aiResp.Choices) > 0 {
 		responseContent := aiResp.Choices[0].Message.Content
-
 		g.aiCache.Store(cacheKey, responseContent)
-		g.logger.Debug("🧠 AI Cache Stored", zap.String("key", cacheKey))
-
 		return responseContent, nil
 	}
-
 	return "", fmt.Errorf("AI returned no response")
 }
 
@@ -449,4 +427,12 @@ func hashString(s string) string {
 	h := sha256.New()
 	h.Write([]byte(s))
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+type wsContextKey struct{}
+
+type HttpContext struct {
+	W      http.ResponseWriter
+	R      *http.Request
+	WSConn *websocket.Conn
 }

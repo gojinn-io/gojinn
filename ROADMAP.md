@@ -114,17 +114,17 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 - [x] **Supply Chain Security:** Runtime strictly enforces signature verification via Caddyfile policy.
 - [x] **Integrity Guarantee:** Mathematical proof that code hasn't been tampered with (Signature validates Content Hash).
 
-### 🕸️ Phase 14: The Mesh (P2P Federation)
+### 🕸️ Phase 14: The Mesh (P2P Federation) (DONE v0.14.0)
 *Scale without a master node.*
-- [ ] **P2P Discovery:** Gossip protocol (Memberlist/WireGuard) for node discovery.
-- [ ] **Cluster Storage:** Sync Certificates and KV across nodes.
-- [ ] **Edge Routing:** Automatic request routing to the nearest available node.
+- [x] **P2P Discovery:** Gossip protocol (Memberlist/WireGuard) for node discovery.
+- [x] **Cluster Storage:** Sync Certificates and KV across nodes.
+- [x] **Edge Routing:** Automatic request routing to the nearest available node.
 
-### 🎭 Phase 15: Stateful Actors
+### 🎭 Phase 15: Stateful Actors (DONE v0.15.0)
 *Real-time applications without external DBs.*
-- [ ] **Actor Model:** Durable Objects implementation (State lives in RAM/Disk).
-- [ ] **Websockets Support:** massive concurrent connections handling.
-- [ ] **Global Locking:** Distributed consistency for actors.
+- [x] **Actor Model:** Durable Objects implementation (State lives in RAM/Disk).
+- [x] **Websockets Support:** massive concurrent connections handling.
+- [x] **Global Locking:** Distributed consistency for actors.
 
 ---
 
