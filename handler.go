@@ -18,6 +18,14 @@ import (
 	"go.uber.org/zap"
 )
 
+type CrashSnapshot struct {
+	Timestamp time.Time         `json:"timestamp"`
+	Error     string            `json:"error"`
+	Input     json.RawMessage   `json:"input"`
+	Env       map[string]string `json:"env"`
+	WasmFile  string            `json:"wasm_file"`
+}
+
 var bufferPool = sync.Pool{
 	New: func() interface{} { return new(bytes.Buffer) },
 }
@@ -104,6 +112,22 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 			return nil
 		}
 		r.logger.Error("WASM Execution Failed", zap.Error(err), zap.String("stderr", stderrBuf.String()))
+
+		if r.RecordCrashes {
+			snapshot := CrashSnapshot{
+				Timestamp: time.Now(),
+				Error:     err.Error() + " | Stderr: " + stderrBuf.String(),
+				Input:     inputJSON,
+				Env:       r.Env,
+				WasmFile:  r.Path,
+			}
+			dumpBytes, _ := json.MarshalIndent(snapshot, "", "  ")
+
+			filename := fmt.Sprintf("crash_%d.json", time.Now().UnixNano())
+
+			r.saveCrashDump(filename, dumpBytes)
+		}
+
 		return caddyhttp.Error(http.StatusInternalServerError, err)
 	}
 	defer mod.Close(ctxWithHTTP)

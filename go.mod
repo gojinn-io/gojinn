@@ -20,6 +20,7 @@ require (
 	go.uber.org/zap v1.27.0
 	golang.org/x/time v0.14.0
 	modernc.org/sqlite v1.44.3
+	nhooyr.io/websocket v1.8.17
 )
 
 require (
@@ -199,5 +200,4 @@ require (
 	modernc.org/libc v1.67.6 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
-	nhooyr.io/websocket v1.8.17 // indirect
 )

@@ -30,10 +30,12 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	m.CorsOrigins = []string{}
 
 	m.TrustedKeys = []string{}
-	m.ClusterSeeds = []string{} // Inicializa seeds vazio
+	m.ClusterSeeds = []string{}
 
 	m.RateLimit = 0
 	m.RateBurst = 0
+
+	m.CrashPath = "./crashes"
 
 	for h.Next() {
 		args := h.RemainingArgs()
@@ -122,7 +124,6 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 					m.S3SecretKey = h.Val()
 				}
 
-			// --- SECURITY BLOCK (Fase 13) ---
 			case "security":
 				for nesting := h.Nesting(); h.NextBlock(nesting); {
 					switch h.Val() {
@@ -139,7 +140,6 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 					}
 				}
 
-			// --- CLUSTER / MESH BLOCK (Fase 14) ---
 			case "cluster":
 				for nesting := h.Nesting(); h.NextBlock(nesting); {
 					switch h.Val() {
@@ -153,7 +153,6 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 						}
 						m.ClusterPort = val
 					case "seeds":
-						// Captura todos os argumentos restantes como seeds
 						m.ClusterSeeds = append(m.ClusterSeeds, h.RemainingArgs()...)
 					case "secret":
 						if !h.NextArg() {
@@ -245,6 +244,18 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 					if err == nil {
 						m.RateBurst = val
 					}
+				}
+
+			case "record_crashes":
+				if h.NextArg() {
+					val := h.Val()
+					if val == "true" {
+						m.RecordCrashes = true
+					}
+				}
+			case "crash_path":
+				if h.NextArg() {
+					m.CrashPath = h.Val()
 				}
 			}
 		}

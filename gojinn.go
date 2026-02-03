@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -41,6 +42,9 @@ type Gojinn struct {
 	MemoryLimit string            `json:"memory_limit,omitempty"`
 	PoolSize    int               `json:"pool_size,omitempty"`
 	DebugSecret string            `json:"debug_secret,omitempty"`
+
+	RecordCrashes bool   `json:"record_crashes,omitempty"`
+	CrashPath     string `json:"crash_path,omitempty"`
 
 	TrustedKeys    []string `json:"trusted_keys,omitempty"`
 	SecurityPolicy string   `json:"security_policy,omitempty"`
@@ -435,4 +439,21 @@ type HttpContext struct {
 	W      http.ResponseWriter
 	R      *http.Request
 	WSConn *websocket.Conn
+}
+
+func (g *Gojinn) saveCrashDump(filename string, data []byte) {
+	if g.CrashPath == "" {
+		g.CrashPath = "./crashes"
+	}
+	if err := os.MkdirAll(g.CrashPath, 0755); err != nil {
+		g.logger.Error("Failed to create crash directory", zap.Error(err))
+		return
+	}
+
+	fullPath := filepath.Join(g.CrashPath, filename)
+	if err := os.WriteFile(fullPath, data, 0644); err != nil {
+		g.logger.Error("Failed to write crash dump", zap.Error(err))
+	} else {
+		g.logger.Info("Crash Dump Saved (Time Travel Ready)", zap.String("file", fullPath))
+	}
 }

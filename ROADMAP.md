@@ -131,9 +131,9 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 ## 🔮 PART V: THE NEXT GENERATION (Visionary)
 *Redefining Developer Experience.*
 
-### ⏪ Phase 16: Time-Travel Debugging
-- [ ] **Deterministic Replay:** Record inputs to replay crashes locally.
-- [ ] **Snapshotting:** Save/Restore full VM state.
+### ⏪ Phase 16: Time-Travel Debugging (DONE v0.16.0)
+- [x] **Deterministic Replay:** Record inputs to replay crashes locally.
+- [x] **Snapshotting:** Save/Restore full VM state.
 
 ### 🖥️ Phase 17: Gojinn Studio
 - [ ] **Visual Control Plane:** Web GUI for topology, metrics, and management.
