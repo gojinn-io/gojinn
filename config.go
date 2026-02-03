@@ -8,11 +8,13 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
+// Estrutura para Cron Jobs
 type CronJob struct {
 	Schedule string `json:"schedule"`
 	WasmFile string `json:"wasm_file"`
 }
 
+// Estrutura para Assinaturas MQTT
 type MQTTSub struct {
 	Topic    string `json:"topic"`
 	WasmFile string `json:"wasm_file"`
@@ -22,6 +24,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	var m Gojinn
 	m.Env = make(map[string]string)
 	m.Mounts = make(map[string]string)
+	// Inicializa slices
 	m.CronJobs = []CronJob{}
 	m.MQTTSubs = []MQTTSub{}
 
@@ -111,10 +114,12 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				if h.NextArg() {
 					m.S3SecretKey = h.Val()
 				}
+
+			// Parsing do CRON
 			case "cron":
 				var job CronJob
 				if !h.NextArg() {
-					return nil, h.Err("cron expects a schedule string (e.g., '@every 5s')")
+					return nil, h.Err("cron expects a schedule string")
 				}
 				job.Schedule = h.Val()
 				if !h.NextArg() {
@@ -123,6 +128,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				job.WasmFile = h.Val()
 				m.CronJobs = append(m.CronJobs, job)
 
+			// Parsing do MQTT
 			case "mqtt_broker":
 				if h.NextArg() {
 					m.MQTTBroker = h.Val()
@@ -145,13 +151,29 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 					return nil, h.Err("mqtt_subscribe expects a topic")
 				}
 				sub.Topic = h.Val()
-
 				if !h.NextArg() {
 					return nil, h.Err("mqtt_subscribe expects a wasm file path")
 				}
 				sub.WasmFile = h.Val()
-
 				m.MQTTSubs = append(m.MQTTSubs, sub)
+
+			// --- NOVO: AI Engine (Phase 10) ---
+			case "ai_provider":
+				if h.NextArg() {
+					m.AIProvider = h.Val()
+				}
+			case "ai_model":
+				if h.NextArg() {
+					m.AIModel = h.Val()
+				}
+			case "ai_endpoint":
+				if h.NextArg() {
+					m.AIEndpoint = h.Val()
+				}
+			case "ai_token":
+				if h.NextArg() {
+					m.AIToken = h.Val()
+				}
 			}
 		}
 	}

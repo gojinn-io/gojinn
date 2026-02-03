@@ -38,6 +38,7 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 	engine := wazero.NewRuntimeWithConfig(ctxWazero, rConfig)
 
 	_, err := engine.NewHostModuleBuilder("gojinn").
+		// 1. LOG
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
 			level := uint32(stack[0]) //nolint:gosec
@@ -55,6 +56,7 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			}
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{}).
 		Export("host_log").
+		// 2. DB QUERY
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
 			queryPtr := uint32(stack[0])  //nolint:gosec
@@ -89,6 +91,7 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			stack[0] = uint64(bytesToWrite)
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("host_db_query").
+		// 3. KV SET
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
 			keyPtr := uint32(stack[0]) //nolint:gosec
@@ -112,6 +115,7 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{}).
 		Export("host_kv_set").
+		// 4. KV GET
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
 			keyPtr := uint32(stack[0])    //nolint:gosec
@@ -148,6 +152,7 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			stack[0] = uint64(bytesToWrite)
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("host_kv_get").
+		// 5. S3 PUT
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
 			keyPtr := uint32(stack[0])  //nolint:gosec
@@ -176,6 +181,7 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			}
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("host_s3_put").
+		// 6. S3 GET
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
 			keyPtr := uint32(stack[0])    //nolint:gosec
@@ -210,6 +216,7 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			stack[0] = uint64(bytesToWrite)
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("host_s3_get").
+		// 7. ASYNC QUEUE (Fire & Forget)
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
 			filePtr := uint32(stack[0])
@@ -239,6 +246,49 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			stack[0] = 0
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("host_enqueue").
+		// --- 8. AI ENGINE (Phase 10) ---
+		NewFunctionBuilder().
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
+			// Assinatura: host_ask_ai(promptPtr, promptLen, outPtr, outMaxLen) -> bytesWritten
+			promptPtr := uint32(stack[0])
+			promptLen := uint32(stack[1])
+			outPtr := uint32(stack[2])
+			outMaxLen := uint32(stack[3])
+
+			// 1. Ler Prompt
+			pBytes, ok := mod.Memory().Read(promptPtr, promptLen)
+			if !ok {
+				stack[0] = 0
+				return
+			}
+			prompt := string(pBytes)
+
+			// 2. Chamar IA (OpenAI / Ollama)
+			aiResponse, err := r.askAI(prompt)
+			if err != nil {
+				// Em caso de erro, retornamos o erro como JSON para o WASM saber o que houve
+				aiResponse = fmt.Sprintf(`{"error": "%s"}`, err.Error())
+				r.logger.Error("AI Host Function Failed", zap.Error(err))
+			}
+
+			// 3. Escrever Resposta
+			respBytes := []byte(aiResponse)
+			bytesToWrite := uint32(len(respBytes))
+
+			if bytesToWrite > outMaxLen {
+				bytesToWrite = outMaxLen
+				respBytes = respBytes[:bytesToWrite]
+			}
+
+			if !mod.Memory().Write(outPtr, respBytes) {
+				stack[0] = 0
+				return
+			}
+
+			stack[0] = uint64(bytesToWrite)
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
+		Export("host_ask_ai").
+		// -----------------------------
 		Instantiate(ctxWazero)
 
 	if err != nil {
@@ -255,29 +305,25 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 	return &EnginePair{Runtime: engine, Code: code}, nil
 }
 
+// runBackgroundJob (Cron Wrapper)
 func (r *Gojinn) runBackgroundJob(wasmFile string) {
 	cronPayload := `{"event_type": "cron", "source": "gojinn_scheduler"}`
 	r.runAsyncJob(wasmFile, cronPayload)
 }
 
+// runAsyncJob com Retry e DLQ (Phase 9.3)
 func (r *Gojinn) runAsyncJob(wasmFile, payload string) {
 	const maxRetries = 3
 	var err error
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		err = r.executeOneShot(wasmFile, payload)
-
 		if err == nil {
-			r.logger.Debug("Async job finished",
-				zap.String("file", wasmFile),
-				zap.Int("attempt", attempt))
+			r.logger.Debug("Async job finished", zap.String("file", wasmFile), zap.Int("attempt", attempt))
 			return
 		}
 
-		r.logger.Warn("Async job failed",
-			zap.String("file", wasmFile),
-			zap.Int("attempt", attempt),
-			zap.Error(err))
+		r.logger.Warn("Async job failed", zap.String("file", wasmFile), zap.Int("attempt", attempt), zap.Error(err))
 
 		if attempt < maxRetries {
 			time.Sleep(time.Duration(attempt) * time.Second)

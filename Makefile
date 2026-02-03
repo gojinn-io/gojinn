@@ -54,6 +54,7 @@ build-funcs:
 	@GOOS=wasip1 GOARCH=wasm go build -o functions/fail.wasm functions/fail/main.go || echo "⚠️ fail skipping"
 	@GOOS=wasip1 GOARCH=wasm go build -o functions/trigger-fail.wasm functions/trigger-fail/main.go || echo "⚠️ trigger-fail skipping"
 	@GOOS=wasip1 GOARCH=wasm go build -o functions/iot.wasm functions/iot/main.go || echo "⚠️ iot skipping"
+	@GOOS=wasip1 GOARCH=wasm go build -o functions/ai.wasm functions/ai/main.go || echo "⚠️ ai skipping"
 
 # --- 3. Build Polyglot ---
 build-polyglot: download-runtimes
