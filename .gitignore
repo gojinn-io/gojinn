@@ -29,6 +29,7 @@ obj/
 lib/
 tmp/
 functions/*.wasm
+crashes/
 
 #######################################
 # WASM

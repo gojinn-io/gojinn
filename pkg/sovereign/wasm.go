@@ -6,52 +6,59 @@ import (
 	"fmt"
 )
 
-// Usamos um "Magic Footer" para saber se o arquivo foi assinado por nós
-// Gojinn Signature Magic: "GJSIG"
 var MagicFooter = []byte{0x47, 0x4A, 0x53, 0x49, 0x47}
 
-// SignWasm anexa a assinatura ao FINAL do arquivo
-// Formato Final: [WASM Original] + [Assinatura (64 bytes)] + [MagicFooter (5 bytes)]
-func SignWasm(wasmBytes []byte, privKey ed25519.PrivateKey) ([]byte, error) {
-	// 1. Assina o conteúdo original
-	signature := ed25519.Sign(privKey, wasmBytes)
+const (
+	FooterSize = 5
+	SigSize    = ed25519.SignatureSize
+)
 
-	// 2. Cria o novo binário
+func StripSignature(data []byte) []byte {
+	if len(data) < FooterSize+SigSize {
+		return data
+	}
+
+	footer := data[len(data)-FooterSize:]
+	if !bytes.Equal(footer, MagicFooter) {
+		return data
+	}
+
+	totalOverhead := FooterSize + SigSize
+	contentEnd := len(data) - totalOverhead
+
+	return data[:contentEnd]
+}
+
+func SignWasm(wasmBytes []byte, privKey ed25519.PrivateKey) ([]byte, error) {
+	cleanBytes := StripSignature(wasmBytes)
+
+	signature := ed25519.Sign(privKey, cleanBytes)
+
 	var buf bytes.Buffer
-	buf.Write(wasmBytes)   // Código
-	buf.Write(signature)   // Assinatura (64 bytes fixos)
-	buf.Write(MagicFooter) // Marcador (5 bytes)
+	buf.Write(cleanBytes)
+	buf.Write(signature)
+	buf.Write(MagicFooter)
 
 	return buf.Bytes(), nil
 }
 
-// VerifyWasm verifica a assinatura e RETORNA APENAS O WASM ORIGINAL (Limpo)
 func VerifyWasm(signedBytes []byte, trustedKeys []ed25519.PublicKey) ([]byte, error) {
 	totalLen := len(signedBytes)
-	footerLen := len(MagicFooter)
-	sigLen := ed25519.SignatureSize // 64 bytes
+	minSize := FooterSize + SigSize
 
-	// Verificação básica de tamanho
-	minSize := footerLen + sigLen
 	if totalLen < minSize {
-		return nil, fmt.Errorf("arquivo muito pequeno para conter assinatura")
+		return nil, fmt.Errorf("file too small to contain a signature")
 	}
 
-	// 1. Verificar o Magic Footer
-	footer := signedBytes[totalLen-footerLen:]
+	footer := signedBytes[totalLen-FooterSize:]
 	if !bytes.Equal(footer, MagicFooter) {
-		// Se não tem nosso footer, assumimos que não está assinado (ou formato inválido)
-		return nil, fmt.Errorf("arquivo não possui assinatura Gojinn válida (Magic Footer missing)")
+		return nil, fmt.Errorf("file does not contain a valid signature footer (missing magic footer)")
 	}
 
-	// 2. Extrair os componentes
-	// Onde termina o WASM original?
-	wasmEnd := totalLen - footerLen - sigLen
-
+	wasmEnd := totalLen - minSize
 	originalWasm := signedBytes[:wasmEnd]
-	signature := signedBytes[wasmEnd : totalLen-footerLen]
+	signature := signedBytes[wasmEnd : totalLen-FooterSize]
 
-	// 3. Verificar contra as chaves confiáveis
 	verified := false
 	for _, key := range trustedKeys {
 		if ed25519.Verify(key, originalWasm, signature) {
@@ -61,10 +68,8 @@ func VerifyWasm(signedBytes []byte, trustedKeys []ed25519.PublicKey) ([]byte, er
 	}
 
 	if !verified {
-		return nil, fmt.Errorf("assinatura digital inválida ou chave não confiável")
+		return nil, fmt.Errorf("invalid digital signature or untrusted key")
 	}
 
-	// 4. RETORNAR O CÓDIGO LIMPO
-	// Isso é crucial! O Wazero só deve receber o 'originalWasm', sem o lixo no final.
 	return originalWasm, nil
 }

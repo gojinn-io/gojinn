@@ -118,7 +118,9 @@ func (g *Gojinn) loadWasmSecurely(path string) ([]byte, error) {
 		if g.SecurityPolicy == "strict" {
 			return nil, fmt.Errorf("security policy is strict but no trusted keys are defined")
 		}
-		return rawBytes, nil
+
+		cleanBytes := sovereign.StripSignature(rawBytes)
+		return cleanBytes, nil
 	}
 
 	var trusted []ed25519.PublicKey
@@ -136,10 +138,12 @@ func (g *Gojinn) loadWasmSecurely(path string) ([]byte, error) {
 			g.logger.Error("BLOCKING UNSIGNED MODULE", zap.String("file", path), zap.Error(err))
 			return nil, fmt.Errorf("module signature verification failed: %w", err)
 		}
+
 		g.logger.Warn("Security Audit Failed (Allowing run due to audit policy)",
 			zap.String("file", path),
 			zap.Error(err))
-		return rawBytes, nil
+
+		return sovereign.StripSignature(rawBytes), nil
 	}
 
 	g.logger.Info("Module Signature Verified", zap.String("file", path), zap.Int("size_clean", len(cleanBytes)))
