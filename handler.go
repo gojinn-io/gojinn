@@ -2,8 +2,6 @@ package gojinn
 
 import (
 	"bytes"
-	"context"
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,7 +12,6 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"github.com/tetratelabs/wazero"
 	"go.uber.org/zap"
 )
 
@@ -37,14 +34,16 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 				"node_id":      "local-node",
 				"uptime":       "running",
 				"pool_size":    r.PoolSize,
-				"active_peers": []string{},
 				"memory_limit": r.MemoryLimit,
 				"fuel_limit":   r.FuelLimit,
+				"nats_status":  "disconnected",
+				"topic":        r.getFunctionTopic(),
 			}
-			if r.meshNode != nil {
-				status["node_id"] = r.meshNode.ID
-				status["active_peers"] = r.meshNode.GetPeers()
+
+			if r.natsConn != nil {
+				status["nats_status"] = r.natsConn.Status().String()
 			}
+
 			rw.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(rw).Encode(status)
 			return nil
@@ -52,26 +51,39 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 
 		if req.Method == "POST" && req.URL.Path == "/_sys/patch" {
 			var patch struct {
-				PoolSize int `json:"pool_size"`
+				PoolSize int  `json:"pool_size"`
+				Reload   bool `json:"reload"`
 			}
 			if err := json.NewDecoder(req.Body).Decode(&patch); err != nil {
 				http.Error(rw, err.Error(), 400)
 				return nil
 			}
 
+			shouldReload := patch.Reload
+
 			if patch.PoolSize > 0 {
-				r.logger.Info("🔥 Hot Patching Triggered",
+				r.logger.Info("Hot Patching Pool Size",
 					zap.Int("old_pool_size", r.PoolSize),
 					zap.Int("new_pool_size", patch.PoolSize))
 
 				r.PoolSize = patch.PoolSize
+				shouldReload = true
+			}
+
+			if shouldReload {
+				if err := r.ReloadWorkers(); err != nil {
+					r.logger.Error("Hot Reload Failed", zap.Error(err))
+					http.Error(rw, "Reload failed: "+err.Error(), 500)
+					return nil
+				}
 			}
 
 			rw.Header().Set("Content-Type", "application/json")
-			rw.Write([]byte(`{"status": "patched", "msg": "Configuration updated hot!"}`))
+			rw.Write([]byte(`{"status": "patched", "msg": "Configuration updated and workers reloaded hot!"}`))
 			return nil
 		}
 	}
+
 	start := time.Now()
 
 	if err := r.handleMiddleware(rw, req); err != nil {
@@ -82,32 +94,6 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 		r.metrics.active.WithLabelValues(r.Path).Inc()
 		defer r.metrics.active.WithLabelValues(r.Path).Dec()
 	}
-
-	var pair *EnginePair
-	select {
-	case pair = <-r.enginePool:
-	case <-time.After(time.Duration(r.Timeout)):
-		return caddyhttp.Error(http.StatusServiceUnavailable, fmt.Errorf("worker pool exhausted"))
-	}
-
-	defer func() {
-		select {
-		case r.enginePool <- pair:
-		default:
-			pair.Runtime.Close(context.Background())
-		}
-	}()
-
-	ctx, cancel := context.WithTimeout(req.Context(), time.Duration(r.Timeout))
-	defer cancel()
-
-	stdoutBuf := bufferPool.Get().(*bytes.Buffer)
-	stdoutBuf.Reset()
-	defer bufferPool.Put(stdoutBuf)
-
-	stderrBuf := bufferPool.Get().(*bytes.Buffer)
-	stderrBuf.Reset()
-	defer bufferPool.Put(stderrBuf)
 
 	bodyBytes, _ := io.ReadAll(req.Body)
 	req.Body.Close()
@@ -125,41 +111,22 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 	}
 	inputJSON, _ := json.Marshal(reqPayload)
 
-	fsConfig := wazero.NewFSConfig()
-	for host, guest := range r.Mounts {
-		fsConfig = fsConfig.WithDirMount(host, guest)
+	topic := r.getFunctionTopic()
+
+	natsTimeout := time.Duration(r.Timeout) + (100 * time.Millisecond)
+
+	if r.natsConn == nil {
+		return caddyhttp.Error(http.StatusServiceUnavailable, fmt.Errorf("NATS connection not available"))
 	}
 
-	modConfig := wazero.NewModuleConfig().
-		WithStdout(stdoutBuf).
-		WithStderr(stderrBuf).
-		WithStdin(bytes.NewReader(inputJSON)).
-		WithSysWalltime().
-		WithSysNanotime().
-		WithRandSource(rand.Reader).
-		WithFSConfig(fsConfig)
-
-	for k, v := range r.Env {
-		modConfig = modConfig.WithEnv(k, v)
-	}
-
-	httpCtx := &HttpContext{
-		W: rw,
-		R: req,
-	}
-	ctxWithHTTP := context.WithValue(ctx, wsContextKey{}, httpCtx)
-
-	mod, err := pair.Runtime.InstantiateModule(ctxWithHTTP, pair.Code, modConfig)
+	msg, err := r.natsConn.Request(topic, inputJSON, natsTimeout)
 	if err != nil {
-		if ctxWithHTTP.Err() == context.Canceled {
-			return nil
-		}
-		r.logger.Error("WASM Execution Failed", zap.Error(err), zap.String("stderr", stderrBuf.String()))
+		r.logger.Error("Function Execution Failed (NATS)", zap.Error(err))
 
 		if r.RecordCrashes {
 			snapshot := CrashSnapshot{
 				Timestamp: time.Now(),
-				Error:     err.Error() + " | Stderr: " + stderrBuf.String(),
+				Error:     err.Error(),
 				Input:     inputJSON,
 				Env:       r.Env,
 				WasmFile:  r.Path,
@@ -169,15 +136,10 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 			r.saveCrashDump(filename, dumpBytes)
 		}
 
-		return caddyhttp.Error(http.StatusInternalServerError, err)
-	}
-	defer mod.Close(ctxWithHTTP)
-
-	if httpCtx.WSConn != nil {
-		return nil
+		return caddyhttp.Error(http.StatusServiceUnavailable, fmt.Errorf("worker execution failed: %v", err))
 	}
 
-	return r.writeResponse(rw, stdoutBuf.Bytes(), time.Since(start).Seconds())
+	return r.writeResponse(rw, msg.Data, time.Since(start).Seconds())
 }
 
 func (r *Gojinn) handleMiddleware(rw http.ResponseWriter, req *http.Request) error {

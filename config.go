@@ -30,7 +30,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	m.CorsOrigins = []string{}
 
 	m.TrustedKeys = []string{}
-	m.ClusterSeeds = []string{}
+	m.NatsRoutes = []string{}
 
 	m.RateLimit = 0
 	m.RateBurst = 0
@@ -140,27 +140,17 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 					}
 				}
 
-			case "cluster":
-				for nesting := h.Nesting(); h.NextBlock(nesting); {
-					switch h.Val() {
-					case "port":
-						if !h.NextArg() {
-							return nil, h.Err("cluster port expects an integer")
-						}
-						val, err := strconv.Atoi(h.Val())
-						if err != nil {
-							return nil, h.Err("invalid cluster port number")
-						}
-						m.ClusterPort = val
-					case "seeds":
-						m.ClusterSeeds = append(m.ClusterSeeds, h.RemainingArgs()...)
-					case "secret":
-						if !h.NextArg() {
-							return nil, h.Err("cluster secret expects a string (32 bytes)")
-						}
-						m.ClusterSecret = h.Val()
+			case "nats_port":
+				if h.NextArg() {
+					val, err := strconv.Atoi(h.Val())
+					if err == nil {
+						m.NatsPort = val
+					} else {
+						return nil, h.Err("nats_port expects an integer")
 					}
 				}
+			case "nats_routes":
+				m.NatsRoutes = append(m.NatsRoutes, h.RemainingArgs()...)
 
 			case "cron":
 				var job CronJob

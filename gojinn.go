@@ -20,12 +20,13 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"github.com/nats-io/nats-server/v2/server"
+	"github.com/nats-io/nats.go"
 	"github.com/robfig/cron/v3"
 	"go.uber.org/zap"
 	"golang.org/x/time/rate"
 	"nhooyr.io/websocket"
 
-	"github.com/pauloappbr/gojinn/pkg/mesh"
 	"github.com/pauloappbr/gojinn/pkg/sovereign"
 )
 
@@ -49,10 +50,10 @@ type Gojinn struct {
 	TrustedKeys    []string `json:"trusted_keys,omitempty"`
 	SecurityPolicy string   `json:"security_policy,omitempty"`
 
-	ClusterPort   int      `json:"cluster_port,omitempty"`
-	ClusterSeeds  []string `json:"cluster_seeds,omitempty"`
-	ClusterSecret string   `json:"cluster_secret,omitempty"`
-	meshNode      *mesh.Node
+	NatsPort   int      `json:"nats_port,omitempty"`
+	NatsRoutes []string `json:"nats_routes,omitempty"`
+	natsServer *server.Server
+	natsConn   *nats.Conn
 
 	FuelLimit uint64            `json:"fuel_limit,omitempty"`
 	Mounts    map[string]string `json:"mounts,omitempty"`
@@ -64,8 +65,6 @@ type Gojinn struct {
 	db      *sql.DB
 	logger  *zap.Logger
 	metrics *gojinnMetrics
-
-	enginePool chan *EnginePair
 
 	S3Endpoint  string `json:"s3_endpoint,omitempty"`
 	S3Region    string `json:"s3_region,omitempty"`
@@ -97,6 +96,9 @@ type Gojinn struct {
 	RateBurst  int     `json:"rate_burst,omitempty"`
 	limiters   map[string]*rate.Limiter
 	limitersMu sync.Mutex
+
+	subs   []*nats.Subscription
+	subsMu sync.Mutex
 }
 
 func (*Gojinn) CaddyModule() caddy.ModuleInfo {
@@ -161,48 +163,41 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("failed to setup database: %w", err)
 	}
 
-	if r.ClusterPort > 0 {
-		r.logger.Info("Initializing Mesh Node", zap.Int("port", r.ClusterPort))
-
-		node, err := mesh.NewNode(r.ClusterPort, r.ClusterPort, r.ClusterSeeds, r.ClusterSecret, []string{r.Path}, 8080)
-		if err != nil {
-			return fmt.Errorf("failed to start mesh: %w", err)
-		}
-		r.meshNode = node
-
-		r.meshNode.OnKVUpdate = func(key, value string) {
-			r.logger.Debug("Mesh KV Sync (Remote Update)", zap.String("key", key), zap.String("val_size", fmt.Sprintf("%d bytes", len(value))))
-			r.kvStore.Store(key, value)
-		}
-
-		go func() {
-			time.Sleep(2 * time.Second)
-			ticker := time.NewTicker(30 * time.Second)
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-					if r.meshNode != nil && r.meshNode.List != nil {
-						peers := r.meshNode.GetPeers()
-						r.logger.Info("Mesh Topology",
-							zap.Int("members_count", len(peers)),
-							zap.Strings("members", peers))
-					}
-				}
-			}
-		}()
+	opts := &server.Options{
+		Port:   r.NatsPort,
+		NoLog:  true,
+		NoSigs: true,
 	}
+
+	if len(r.NatsRoutes) > 0 {
+		opts.Routes = server.RoutesFromStr(strings.Join(r.NatsRoutes, ","))
+	}
+
+	ns, err := server.NewServer(opts)
+	if err != nil {
+		return fmt.Errorf("failed to create NATS server: %w", err)
+	}
+	r.natsServer = ns
+	go ns.Start()
+
+	if !ns.ReadyForConnections(10 * time.Second) {
+		return fmt.Errorf("nats server failed to start")
+	}
+	r.logger.Info("Embedded NATS Started", zap.String("url", ns.ClientURL()))
+
+	nc, err := nats.Connect(ns.ClientURL())
+	if err != nil {
+		return fmt.Errorf("failed to connect to local NATS: %w", err)
+	}
+	r.natsConn = nc
 
 	if len(r.CronJobs) > 0 {
 		r.scheduler = cron.New(cron.WithSeconds())
 		for _, job := range r.CronJobs {
 			j := job
-
 			if _, err := r.loadWasmSecurely(j.WasmFile); err != nil {
 				return fmt.Errorf("cron job security check failed for %s: %w", j.WasmFile, err)
 			}
-
 			_, err := r.scheduler.AddFunc(j.Schedule, func() {
 				r.runBackgroundJob(j.WasmFile)
 			})
@@ -264,38 +259,71 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 	}
 
 	if r.Path != "" {
-		r.enginePool = make(chan *EnginePair, r.PoolSize)
 
 		wasmBytes, err := r.loadWasmSecurely(r.Path)
 		if err != nil {
 			return fmt.Errorf("failed to load sovereign module: %w", err)
 		}
-		r.logger.Info("provisioning worker pool", zap.Int("workers", r.PoolSize))
+		r.logger.Info("provisioning NATS workers", zap.Int("workers", r.PoolSize))
 
-		var wg sync.WaitGroup
+		topic := r.getFunctionTopic()
+
+		r.subsMu.Lock()
 		for i := 0; i < r.PoolSize; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				pair, err := r.createWorker(wasmBytes)
-				if err != nil {
-					r.logger.Error("failed to provision worker", zap.Error(err))
-					return
-				}
-				r.enginePool <- pair
-			}()
+			sub, err := r.startWorkerSubscriber(i, topic, wasmBytes)
+			if err != nil {
+				r.logger.Error("failed to start worker subscriber", zap.Error(err))
+			} else {
+				r.subs = append(r.subs, sub)
+			}
 		}
-		wg.Wait()
+		r.subsMu.Unlock()
 	}
 
 	return nil
 }
 
-func (r *Gojinn) Cleanup() error {
-	if r.meshNode != nil {
-		r.logger.Info("Leaving Mesh Cluster...")
-		r.meshNode.Shutdown()
+func (r *Gojinn) ReloadWorkers() error {
+	r.logger.Info("Hot Reload Initiated: Recycling Workers...")
+
+	r.subsMu.Lock()
+	defer r.subsMu.Unlock()
+
+	for _, sub := range r.subs {
+		if err := sub.Drain(); err != nil {
+			r.logger.Warn("Failed to drain worker sub", zap.Error(err))
+		}
 	}
+	r.subs = nil
+
+	wasmBytes, err := r.loadWasmSecurely(r.Path)
+	if err != nil {
+		return fmt.Errorf("failed to reload wasm file: %w", err)
+	}
+
+	topic := r.getFunctionTopic()
+	for i := 0; i < r.PoolSize; i++ {
+		sub, err := r.startWorkerSubscriber(i, topic, wasmBytes)
+		if err != nil {
+			return fmt.Errorf("failed to start new worker %d: %w", i, err)
+		}
+		r.subs = append(r.subs, sub)
+	}
+
+	r.logger.Info("Hot Reload Complete", zap.Int("new_workers", len(r.subs)))
+	return nil
+}
+
+func (r *Gojinn) Cleanup() error {
+	if r.natsConn != nil {
+		r.natsConn.Drain()
+		r.natsConn.Close()
+	}
+
+	if r.natsServer != nil {
+		r.natsServer.Shutdown()
+	}
+
 	if r.mqttClient != nil && r.mqttClient.IsConnected() {
 		r.mqttClient.Disconnect(250)
 	}
@@ -305,10 +333,11 @@ func (r *Gojinn) Cleanup() error {
 	if r.db != nil {
 		r.db.Close()
 	}
-	if r.enginePool != nil {
-		close(r.enginePool)
-	}
 	return nil
+}
+
+func (r *Gojinn) getFunctionTopic() string {
+	return fmt.Sprintf("gojinn.exec.%s", hashString(r.Path))
 }
 
 func (r *Gojinn) getLimiter(key string) *rate.Limiter {

@@ -140,14 +140,22 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 - [x] **Hot Patching:** Update variables via UI.
 - [x] **Language-Agnostic CLI:** Unified `gojinn` command family.
 
-### 🤖 Phase 18: The Agentic Interface (MCP)
+### ⚡ Phase 18: The Nervous System (NATS Refactoring) (DONE v0.18.0)
+*Replacing the internal communication engine for massive scalability.*
+- [x] **Embedded NATS Server:** Replaced Go channels with a production-grade embedded NATS server.
+- [x] **Worker Queue Groups:** Load balancing via NATS Queue Subscriptions (Round-Robin).
+- [x] **Hot Reload Protocol:** Zero-downtime updates via `_sys` control topics.
+- [x] **Resilient Messaging:** Decoupled HTTP handlers from execution workers.
+
+### 🤖 Phase 19: The Agentic Interface (MCP)
 - [ ] **Auto-MCP Generation:** Expose WASM functions as tools for Claude/OpenAI agents.
 - [ ] **Semantic Router:** Natural language routing to functions.
 - [ ] **Self-Healing:** AI-driven log analysis and fix suggestions.
 
-### 💎 Phase 19: The Sync Engine (Local-First)
-- [ ] **SQLite Replication Protocol:** Sync browser-based SQLite with Server SQLite.
-- [ ] **CRDT Integration:** Conflict-free data merging for offline-first apps.
+### 💎 Phase 20: The Sync Engine (Via LibSQL)
+- [ ] **LibSQL Integration:** Replace standard SQLite driver with LibSQL server mode.
+- [ ] **Replication Tunnel:** Expose replication protocol safely via Caddy/WebSockets.
+- [ ] **Client SDK:** Provide a JS helper to connect browser-based SQLite to Gojinn.
 
 ---
 

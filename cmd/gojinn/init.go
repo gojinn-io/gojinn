@@ -65,7 +65,6 @@ import (
 	"os"
 )
 
-// Request payload structure
 type Request struct {
 	Method  string              ` + "`" + `json:"method"` + "`" + `
 	Headers map[string][]string ` + "`" + `json:"headers"` + "`" + `
@@ -73,7 +72,6 @@ type Request struct {
 }
 
 func main() {
-	// 1. Read Input from Stdin
 	input, _ := io.ReadAll(os.Stdin)
 	
 	var req Request
@@ -81,14 +79,11 @@ func main() {
 		_ = json.Unmarshal(input, &req)
 	}
 
-	// 2. Process Logic
 	responseMsg := fmt.Sprintf("Hello from Gojinn! You sent: %s", req.Body)
 	if req.Body == "" {
 		responseMsg = "Hello from Gojinn! (No body sent)"
 	}
 
-	// 3. Write Output to Stdout (JSON format expected by Host)
-	// We construct the JSON manually for simplicity, or use a struct
 	fmt.Printf(` + "`" + `{"status": 200, "headers": {"Content-Type": ["text/plain"]}, "body": "%s"}` + "`" + `, responseMsg)
 }
 `),
@@ -104,7 +99,6 @@ import (
 	"unsafe"
 )
 
-// --- HOST IMPORTS ---
 //go:wasmimport gojinn host_ws_upgrade
 func host_ws_upgrade() uint32 
 
@@ -115,37 +109,31 @@ func host_ws_read(outPtr, outMaxLen uint32) uint64
 func host_ws_write(msgPtr, msgLen uint32)
 
 func main() {
-	// 1. Read Input
 	input, _ := io.ReadAll(os.Stdin)
 	reqJSON := string(input)
 
-	// 2. Check for WebSocket Upgrade
 	isWS := strings.Contains(reqJSON, "websocket") || strings.Contains(reqJSON, "Upgrade")
 
 	if isWS {
 		if host_ws_upgrade() == 1 {
-			// --- ACTOR LOOP ---
 			buf := make([]byte, 4096)
 			ptr := uint32(uintptr(unsafe.Pointer(&buf[0])))
 
 			for {
-				// Block until message received
 				n := host_ws_read(ptr, 4096)
 				if n == 0 { break } // Connection closed
 
 				msg := string(buf[:n])
 				
-				// Echo logic
 				reply := fmt.Sprintf("Actor received: %s", msg)
 				replyPtr := uint32(uintptr(unsafe.Pointer(unsafe.StringData(reply))))
 				
 				host_ws_write(replyPtr, uint32(len(reply)))
 			}
-			return // Exit when connection closes
+			return
 		}
 	}
 
-	// 3. Fallback for standard HTTP
 	fmt.Printf(` + "`" + `{"status": 200, "body": "Please connect via WebSocket"}` + "`" + `)
 }
 `),

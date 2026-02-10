@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dustin/go-humanize"
+	"github.com/nats-io/nats.go"
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
@@ -20,7 +21,72 @@ type EnginePair struct {
 	Code    wazero.CompiledModule
 }
 
-func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
+func (r *Gojinn) startWorkerSubscriber(id int, topic string, wasmBytes []byte) (*nats.Subscription, error) {
+	pair, err := r.createWazeroRuntime(wasmBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create wazero runtime for worker %d: %w", id, err)
+	}
+
+	sub, err := r.natsConn.QueueSubscribe(topic, "workers", func(m *nats.Msg) {
+		r.logger.Debug("Worker received request", zap.Int("worker_id", id), zap.Int("payload_size", len(m.Data)))
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(r.Timeout))
+		defer cancel()
+
+		stdoutBuf := bufferPool.Get().(*bytes.Buffer)
+		stdoutBuf.Reset()
+		defer bufferPool.Put(stdoutBuf)
+
+		stderrBuf := bufferPool.Get().(*bytes.Buffer)
+		stderrBuf.Reset()
+		defer bufferPool.Put(stderrBuf)
+
+		fsConfig := wazero.NewFSConfig()
+		for host, guest := range r.Mounts {
+			fsConfig = fsConfig.WithDirMount(host, guest)
+		}
+
+		modConfig := wazero.NewModuleConfig().
+			WithStdout(stdoutBuf).
+			WithStderr(stderrBuf).
+			WithStdin(bytes.NewReader(m.Data)).
+			WithSysWalltime().
+			WithSysNanotime().
+			WithFSConfig(fsConfig)
+
+		for k, v := range r.Env {
+			modConfig = modConfig.WithEnv(k, v)
+		}
+
+		mod, err := pair.Runtime.InstantiateModule(ctx, pair.Code, modConfig)
+		if err != nil {
+			r.logger.Error("WASM Execution Failed",
+				zap.Int("worker_id", id),
+				zap.Error(err),
+				zap.String("stderr", stderrBuf.String()))
+
+			errResp := fmt.Sprintf(`{"status": 500, "headers": {"Content-Type": ["application/json"]}, "body": "Runtime Error: %s"}`, err.Error())
+			m.Respond([]byte(errResp))
+			return
+		}
+
+		mod.Close(ctx)
+
+		if err := m.Respond(stdoutBuf.Bytes()); err != nil {
+			r.logger.Error("Failed to send NATS response", zap.Error(err))
+		}
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	r.logger.Info("Worker Subscribed and Ready", zap.Int("id", id), zap.String("topic", topic))
+
+	return sub, nil
+}
+
+func (r *Gojinn) createWazeroRuntime(wasmBytes []byte) (*EnginePair, error) {
 	ctxWazero := context.Background()
 	rConfig := wazero.NewRuntimeConfig().WithCloseOnContextDone(true)
 
@@ -110,9 +176,6 @@ func (r *Gojinn) createWorker(wasmBytes []byte) (*EnginePair, error) {
 			val := string(vBytes)
 
 			r.kvStore.Store(key, val)
-			if r.meshNode != nil {
-				r.meshNode.BroadcastKV(key, val)
-			}
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{}).
 		Export("host_kv_set").
 		NewFunctionBuilder().
@@ -408,7 +471,7 @@ func (r *Gojinn) executeOneShot(wasmFile, payload string) error {
 		return fmt.Errorf("security check failed for async job: %w", err)
 	}
 
-	eng, err := r.createWorker(wasmBytes)
+	eng, err := r.createWazeroRuntime(wasmBytes)
 	if err != nil {
 		return fmt.Errorf("create worker error: %w", err)
 	}
@@ -428,7 +491,7 @@ func (r *Gojinn) executeOneShot(wasmFile, payload string) error {
 }
 
 func (r *Gojinn) moveToDLQ(wasmFile, payload string, err error) {
-	r.logger.Error("💀 [DLQ] Job moved to Dead Letter Queue",
+	r.logger.Error("[DLQ] Job moved to Dead Letter Queue",
 		zap.String("file", wasmFile),
 		zap.String("payload", payload),
 		zap.String("final_error", err.Error()),

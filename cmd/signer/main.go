@@ -10,9 +10,9 @@ import (
 
 func main() {
 	action := flag.String("action", "", "gen-keys | sign")
-	name := flag.String("name", "gojinn", "Nome da chave (para gen-keys)")
-	keyFile := flag.String("key", "", "Caminho da chave privada (para sign)")
-	wasmFile := flag.String("file", "", "Arquivo wasm para assinar")
+	name := flag.String("name", "gojinn", "Key name (for gen-keys)")
+	keyFile := flag.String("key", "", "Path to the private key (for sign)")
+	wasmFile := flag.String("file", "", "WASM file to sign")
 	flag.Parse()
 
 	switch *action {
@@ -21,49 +21,45 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		fmt.Printf("✅ Chaves geradas: %s.pub e %s.priv\n", *name, *name)
+		fmt.Printf("Keys generated: %s.pub and %s.priv\n", *name, *name)
 		pubBytes, _ := os.ReadFile(*name + ".pub")
-		fmt.Printf("📋 PUBLIC KEY (Copie para o Caddyfile):\n%s\n", string(pubBytes))
+		fmt.Printf("PUBLIC KEY:\n%s\n", string(pubBytes))
 
 	case "sign":
 		if *keyFile == "" || *wasmFile == "" {
-			panic("Precisa de --key e --file")
+			panic("You must provide --key and --file")
 		}
 
-		// Ler chave privada
 		privHex, err := os.ReadFile(*keyFile)
 		if err != nil {
-			panic(fmt.Errorf("falha ao ler chave privada: %w", err))
+			panic(fmt.Errorf("failed to read private key: %w", err))
 		}
 		privKeyBytes, err := sovereign.ParsePrivateKey(string(privHex))
 		if err != nil {
 			panic(err)
 		}
 
-		// Ler Wasm (CORREÇÃO AQUI: Tratamento de Erro)
 		wasmBytes, err := os.ReadFile(*wasmFile)
 		if err != nil {
-			panic(fmt.Errorf("ARQUIVO WASM NÃO ENCONTRADO ou ilegível: %w", err))
+			panic(fmt.Errorf("WASM FILE NOT FOUND or unreadable: %w", err))
 		}
 
 		if len(wasmBytes) == 0 {
-			panic("O arquivo WASM está vazio! Verifique o build.")
+			panic("The WASM file is empty! Check the build.")
 		}
 
-		// Assinar
 		signedBytes, err := sovereign.SignWasm(wasmBytes, privKeyBytes)
 		if err != nil {
 			panic(err)
 		}
 
-		// Sobrescrever
 		err = os.WriteFile(*wasmFile, signedBytes, 0644)
 		if err != nil {
 			panic(err)
 		}
-		fmt.Printf("🔐 Arquivo assinado com sucesso: %s (Tamanho: %d bytes)\n", *wasmFile, len(signedBytes))
+		fmt.Printf("File successfully signed: %s (Size: %d bytes)\n", *wasmFile, len(signedBytes))
 
 	default:
-		fmt.Println("Use: --action=gen-keys ou --action=sign")
+		fmt.Println("Usage: --action=gen-keys or --action=sign")
 	}
 }
