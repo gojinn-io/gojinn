@@ -96,6 +96,9 @@ type Gojinn struct {
 	ClusterPort  int      `json:"cluster_port,omitempty"`
 	ClusterPeers []string `json:"cluster_peers,omitempty"`
 	ServerName   string   `json:"server_name,omitempty"`
+
+	LeafRemotes []string `json:"leaf_remotes,omitempty"`
+	LeafPort    int      `json:"leaf_port,omitempty"`
 }
 
 func (*Gojinn) CaddyModule() caddy.ModuleInfo {
@@ -200,8 +203,6 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("failed to load sovereign module: %w", err)
 		}
 
-		// --- MUDANÇA: Inicialização Assíncrona ---
-		// Dispara a goroutine e libera o Provision para o Caddy subir
 		go r.startWorkersAsync(wasmBytes)
 	}
 
@@ -215,7 +216,6 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-// --- NOVA FUNÇÃO: Gerencia o startup resiliente dos workers ---
 func (r *Gojinn) startWorkersAsync(wasmBytes []byte) {
 	r.logger.Info("Provisioning NATS workers (Async)...", zap.Int("workers", r.PoolSize))
 	topic := r.getFunctionTopic()
@@ -224,36 +224,29 @@ func (r *Gojinn) startWorkersAsync(wasmBytes []byte) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
-	for {
-		select {
-		case <-ticker.C:
-			// Verifica se o JetStream está pronto
-			if r.js == nil {
-				continue
-			}
-
-			// Verifica se a Stream já existe (criada pelo broker.go via ensureStreamAsync)
-			_, err := r.js.StreamInfo(streamName)
-			if err != nil {
-				// Stream ainda não existe (provavelmente esperando cluster), tenta de novo no próximo tick
-				continue
-			}
-
-			// Stream pronta! Inicia os workers
-			r.subsMu.Lock()
-			for i := 0; i < r.PoolSize; i++ {
-				sub, err := r.startWorkerSubscriber(i, topic, wasmBytes)
-				if err != nil {
-					r.logger.Error("Failed to start worker subscriber", zap.Error(err))
-				} else {
-					r.subs = append(r.subs, sub)
-				}
-			}
-			r.subsMu.Unlock()
-
-			r.logger.Info("All Workers Started Successfully via JetStream!", zap.Int("count", len(r.subs)))
-			return // Sai do loop e da goroutine
+	for range ticker.C {
+		if r.js == nil {
+			continue
 		}
+
+		_, err := r.js.StreamInfo(streamName)
+		if err != nil {
+			continue
+		}
+
+		r.subsMu.Lock()
+		for i := 0; i < r.PoolSize; i++ {
+			sub, err := r.startWorkerSubscriber(i, topic, wasmBytes)
+			if err != nil {
+				r.logger.Error("Failed to start worker subscriber", zap.Error(err))
+			} else {
+				r.subs = append(r.subs, sub)
+			}
+		}
+		r.subsMu.Unlock()
+
+		r.logger.Info("All Workers Started Successfully via JetStream!", zap.Int("count", len(r.subs)))
+		return
 	}
 }
 

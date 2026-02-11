@@ -256,7 +256,6 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 					return nil, h.ArgErr()
 				}
 				m.ClusterName = h.Val()
-
 			case "cluster_port":
 				if !h.NextArg() {
 					return nil, h.ArgErr()
@@ -266,9 +265,17 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 					return nil, h.Errf("invalid cluster_port: %v", err)
 				}
 				m.ClusterPort = port
-
 			case "cluster_peers":
 				m.ClusterPeers = append(m.ClusterPeers, h.RemainingArgs()...)
+			case "leaf_remotes":
+				m.LeafRemotes = append(m.LeafRemotes, h.RemainingArgs()...)
+			case "leaf_port":
+				if h.NextArg() {
+					val, err := strconv.Atoi(h.Val())
+					if err == nil {
+						m.LeafPort = val
+					}
+				}
 			case "server_name":
 				if !h.NextArg() {
 					return nil, h.ArgErr()
