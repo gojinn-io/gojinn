@@ -24,17 +24,16 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	m.Mounts = make(map[string]string)
 	m.CronJobs = []CronJob{}
 	m.MQTTSubs = []MQTTSub{}
-
 	m.AllowedHosts = []string{}
 	m.APIKeys = []string{}
 	m.CorsOrigins = []string{}
-
 	m.TrustedKeys = []string{}
 	m.NatsRoutes = []string{}
 
+	m.ClusterPeers = []string{}
+
 	m.RateLimit = 0
 	m.RateBurst = 0
-
 	m.CrashPath = "./crashes"
 
 	for h.Next() {
@@ -247,6 +246,34 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				if h.NextArg() {
 					m.CrashPath = h.Val()
 				}
+
+			case "data_dir":
+				if h.NextArg() {
+					m.DataDir = h.Val()
+				}
+			case "cluster_name":
+				if !h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				m.ClusterName = h.Val()
+
+			case "cluster_port":
+				if !h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				port, err := strconv.Atoi(h.Val())
+				if err != nil {
+					return nil, h.Errf("invalid cluster_port: %v", err)
+				}
+				m.ClusterPort = port
+
+			case "cluster_peers":
+				m.ClusterPeers = append(m.ClusterPeers, h.RemainingArgs()...)
+			case "server_name":
+				if !h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				m.ServerName = h.Val()
 			}
 		}
 	}

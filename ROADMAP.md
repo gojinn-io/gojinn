@@ -149,19 +149,19 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 - [x] **Hot Reload Protocol:** Zero-downtime updates via `_sys` control topics.
 - [x] **Topology:** Basic node discovery replacing Memberlist.
 
-### 🟠 Phase 19: The Memory (Persistence & Reliability)
+### 🟠 Phase 19: The Memory (Persistence & Reliability) (DONE v0.19.1)
 *Solving "Amnesia" and "Zombie Workers" failures.*
-- [ ] **JetStream Activation:** Enable File Store in the embedded server.
-- [ ] **Durable Messaging:** Replace `nats.Request` with `js.Publish` for guaranteed delivery.
-- [ ] **Automatic Retries:** Implement redelivery policies for failed jobs.
-- [ ] **Dead Letter Queues (DLQ):** Automatic handling of poisoned messages.
+- [x] **JetStream Activation:** Enable File Store in the embedded server.
+- [x] **Durable Messaging:** Replace `nats.Request` with `js.Publish` for guaranteed delivery.
+- [x] **Automatic Retries:** Implement redelivery policies for failed jobs.
+- [x] **Dead Letter Queues (DLQ):** Automatic handling of poisoned messages.
 
 ### 🔵 Phase 20: The Hive (True Clustering)
 *Solving the "Single Point of Failure".*
-- [ ] **Cluster Config:** Configure Routes and Gossip in NATS Server options.
-- [ ] **Seed URLs:** Allow passing seed nodes via Caddyfile.
+- [x] **Cluster Config:** Configure Routes and Gossip in NATS Server options.
+- [x] **Seed URLs:** Allow passing seed nodes via Caddyfile.
 - [ ] **Leaf Nodes:** Implement Leaf Node architecture for Edge-to-Cloud scenarios.
-- [ ] **Multi-Node Testing:** Verify mesh connectivity via Docker Compose.
+- [x] **Multi-Node Testing:** Verify mesh connectivity via Docker Compose.
 
 ### 🟣 Phase 21: The Synapse (Distributed State)
 *Solving the "Volatile State" problem.*
