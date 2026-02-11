@@ -52,7 +52,7 @@ type Gojinn struct {
 
 	DBDriver string `json:"db_driver,omitempty"`
 	DBDSN    string `json:"db_dsn,omitempty"`
-	kvStore  sync.Map
+	kv       nats.KeyValue
 
 	db      *sql.DB
 	logger  *zap.Logger

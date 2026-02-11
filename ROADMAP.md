@@ -160,7 +160,7 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 *Solving the "Single Point of Failure".*
 - [x] **Cluster Config:** Configure Routes and Gossip in NATS Server options.
 - [x] **Seed URLs:** Allow passing seed nodes via Caddyfile.
-- [ ] **Leaf Nodes:** Implement Leaf Node architecture for Edge-to-Cloud scenarios.
+- [x] **Leaf Nodes:** Implement Leaf Node architecture for Edge-to-Cloud scenarios.
 - [x] **Multi-Node Testing:** Verify mesh connectivity via Docker Compose.
 
 ### 🟣 Phase 21: The Synapse (Distributed State)

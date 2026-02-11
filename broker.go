@@ -112,36 +112,59 @@ func (g *Gojinn) startEmbeddedNATS() error {
 	}
 	g.js = js
 
-	go g.ensureStreamAsync()
+	go g.ensureJetStreamResources()
 
 	return nil
 }
 
-func (g *Gojinn) ensureStreamAsync() {
+func (g *Gojinn) ensureJetStreamResources() {
 	streamName := "GOJINN_WORKER"
+	kvBucket := "GOJINN_STATE"
+
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
+		if g.js == nil {
+			continue
+		}
+
 		_, err := g.js.StreamInfo(streamName)
-		if err == nil {
-			return
+		if err != nil {
+			g.logger.Info("Attempting to initialize Durable Stream...", zap.String("stream", streamName))
+			_, err = g.js.AddStream(&nats.StreamConfig{
+				Name:      streamName,
+				Subjects:  []string{"gojinn.exec.>"},
+				Storage:   nats.FileStorage,
+				Retention: nats.WorkQueuePolicy,
+				Replicas:  1,
+			})
+			if err != nil {
+				g.logger.Warn("Stream creation pending...", zap.Error(err))
+				continue
+			}
+			g.logger.Info("Durable Stream Ready!", zap.String("stream", streamName))
 		}
 
-		g.logger.Info("Attempting to initialize Durable Stream...", zap.String("stream", streamName))
-		_, err = g.js.AddStream(&nats.StreamConfig{
-			Name:      streamName,
-			Subjects:  []string{"gojinn.exec.>"},
-			Storage:   nats.FileStorage,
-			Retention: nats.WorkQueuePolicy,
-		})
+		if g.kv == nil {
+			kv, err := g.js.CreateKeyValue(&nats.KeyValueConfig{
+				Bucket:      kvBucket,
+				Description: "Gojinn Distributed State",
+				Storage:     nats.FileStorage,
+				History:     1,
+				TTL:         0,
+			})
 
-		if err == nil {
-			g.logger.Info("Durable Stream Created Successfully!", zap.String("stream", streamName))
-			return
+			if err != nil {
+				g.logger.Warn("KV Bucket creation pending...", zap.Error(err))
+				continue
+			}
+
+			g.kv = kv
+			g.logger.Info("Distributed KV Store Ready!", zap.String("bucket", kvBucket))
 		}
 
-		g.logger.Warn("Stream creation pending (waiting for cluster quorum)...", zap.Error(err))
+		return
 	}
 }
 

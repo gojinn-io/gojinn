@@ -94,7 +94,15 @@ func (r *Gojinn) buildHostModule(ctx context.Context, engine wazero.Runtime) err
 			}
 			val := string(vBytes)
 
-			r.kvStore.Store(key, val)
+			if r.kv == nil {
+				r.logger.Error("KV Store not ready yet")
+				return
+			}
+
+			_, err := r.kv.PutString(key, val)
+			if err != nil {
+				r.logger.Error("KV Put Failed", zap.String("key", key), zap.Error(err))
+			}
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{}).
 		Export("host_kv_set").
 		NewFunctionBuilder().
@@ -115,14 +123,18 @@ func (r *Gojinn) buildHostModule(ctx context.Context, engine wazero.Runtime) err
 			}
 			key := string(kBytes)
 
-			val, ok := r.kvStore.Load(key)
-			if !ok {
+			if r.kv == nil {
 				stack[0] = 0xFFFFFFFFFFFFFFFF
 				return
 			}
 
-			valueStr := val.(string)
-			valBytes := []byte(valueStr)
+			entry, err := r.kv.Get(key)
+			if err != nil {
+				stack[0] = 0xFFFFFFFFFFFFFFFF
+				return
+			}
+
+			valBytes := entry.Value()
 			//nolint:gosec
 			bytesToWrite := uint32(len(valBytes))
 
