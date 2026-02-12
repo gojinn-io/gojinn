@@ -8,8 +8,10 @@ import (
 )
 
 type gojinnMetrics struct {
-	duration *prometheus.HistogramVec
-	active   *prometheus.GaugeVec
+	duration   *prometheus.HistogramVec
+	active     *prometheus.GaugeVec
+	queueDepth *prometheus.GaugeVec
+	jobsTotal  *prometheus.CounterVec
 }
 
 func (r *Gojinn) setupMetrics(ctx caddy.Context) error {
@@ -45,6 +47,36 @@ func (r *Gojinn) setupMetrics(ctx caddy.Context) error {
 		}
 	} else {
 		r.metrics.active = active
+	}
+
+	queueDepth := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "gojinn_worker_queue_depth",
+		Help: "Number of pending jobs in the NATS JetStream stream",
+	}, []string{"stream"})
+
+	if err := registry.Register(queueDepth); err != nil {
+		if are, ok := err.(prometheus.AlreadyRegisteredError); ok {
+			r.metrics.queueDepth = are.ExistingCollector.(*prometheus.GaugeVec)
+		} else {
+			return fmt.Errorf("failed to register queueDepth metric: %v", err)
+		}
+	} else {
+		r.metrics.queueDepth = queueDepth
+	}
+
+	jobsTotal := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "gojinn_worker_jobs_total",
+		Help: "Total number of worker jobs processed by status",
+	}, []string{"status"})
+
+	if err := registry.Register(jobsTotal); err != nil {
+		if are, ok := err.(prometheus.AlreadyRegisteredError); ok {
+			r.metrics.jobsTotal = are.ExistingCollector.(*prometheus.CounterVec)
+		} else {
+			return fmt.Errorf("failed to register jobsTotal metric: %v", err)
+		}
+	} else {
+		r.metrics.jobsTotal = jobsTotal
 	}
 
 	return nil

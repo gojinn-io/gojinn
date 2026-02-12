@@ -247,7 +247,7 @@ func (r *Gojinn) buildHostModule(ctx context.Context, engine wazero.Runtime) err
 			payload := string(pBytes)
 
 			go func() {
-				r.runAsyncJob(wasmFile, payload)
+				r.runAsyncJob(context.Background(), wasmFile, payload)
 			}()
 
 			r.logger.Info("Job enqueued in background", zap.String("file", wasmFile))

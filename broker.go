@@ -164,6 +164,22 @@ func (g *Gojinn) ensureJetStreamResources() {
 			g.logger.Info("Distributed KV Store Ready!", zap.String("bucket", kvBucket))
 		}
 
+		go func() {
+			monitorTicker := time.NewTicker(5 * time.Second)
+			defer monitorTicker.Stop()
+
+			for range monitorTicker.C {
+				if g.js == nil {
+					continue
+				}
+
+				info, err := g.js.StreamInfo(streamName)
+				if err == nil && g.metrics != nil && g.metrics.queueDepth != nil {
+					g.metrics.queueDepth.WithLabelValues(streamName).Set(float64(info.State.Msgs))
+				}
+			}
+		}()
+
 		return
 	}
 }

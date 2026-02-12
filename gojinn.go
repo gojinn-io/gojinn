@@ -1,6 +1,7 @@
 package gojinn
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"net/http"
@@ -110,6 +111,14 @@ func (*Gojinn) CaddyModule() caddy.ModuleInfo {
 
 func (r *Gojinn) Provision(ctx caddy.Context) error {
 	r.logger = ctx.Logger()
+
+	shutdown, err := setupTelemetry("gojinn-" + r.ClusterName)
+	if err != nil {
+		r.logger.Warn("Failed to setup telemetry", zap.Error(err))
+	} else {
+		_ = shutdown
+	}
+
 	r.limiters = make(map[string]*rate.Limiter)
 
 	if r.DataDir == "" {
@@ -124,6 +133,10 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 	}
 	if err := r.setupDB(); err != nil {
 		return fmt.Errorf("failed to setup database: %w", err)
+	}
+
+	if r.ClusterName == "" {
+		r.ClusterName = "gojinn-cluster"
 	}
 
 	if err := r.startEmbeddedNATS(); err != nil {
@@ -172,7 +185,7 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 			for _, sub := range r.MQTTSubs {
 				s := sub
 				token := c.Subscribe(s.Topic, 0, func(client mqtt.Client, msg mqtt.Message) {
-					go r.runAsyncJob(s.WasmFile, string(msg.Payload()))
+					go r.runAsyncJob(context.Background(), s.WasmFile, string(msg.Payload()))
 				})
 				if token.Wait() && token.Error() != nil {
 					r.logger.Error("MQTT Subscribe Error", zap.Error(token.Error()))
@@ -186,7 +199,7 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 		}
 		r.mqttClient = mqtt.NewClient(opts)
 		if token := r.mqttClient.Connect(); token.Wait() && token.Error() != nil {
-			return fmt.Errorf("MQTT connect error: %w", token.Error())
+			r.logger.Error("MQTT Initial Connect Failed", zap.Error(token.Error()))
 		}
 	}
 
@@ -204,13 +217,6 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 		}
 
 		go r.startWorkersAsync(wasmBytes)
-	}
-
-	if r.ClusterName == "" {
-		r.ClusterName = "gojinn-cluster"
-	}
-	if r.ClusterPort == 0 {
-		r.ClusterPort = -1
 	}
 
 	return nil

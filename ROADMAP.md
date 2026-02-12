@@ -156,34 +156,40 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 - [x] **Automatic Retries:** Implement redelivery policies for failed jobs.
 - [x] **Dead Letter Queues (DLQ):** Automatic handling of poisoned messages.
 
-### 🔵 Phase 20: The Hive (True Clustering)
+### 🔵 Phase 20: The Hive (True Clustering) (DONE v0.20.1)
 *Solving the "Single Point of Failure".*
 - [x] **Cluster Config:** Configure Routes and Gossip in NATS Server options.
 - [x] **Seed URLs:** Allow passing seed nodes via Caddyfile.
 - [x] **Leaf Nodes:** Implement Leaf Node architecture for Edge-to-Cloud scenarios.
 - [x] **Multi-Node Testing:** Verify mesh connectivity via Docker Compose.
 
-### 🟣 Phase 21: The Synapse (Distributed State)
+### 🟣 Phase 21: The Synapse (Distributed State) (DONE v0.21.0)
 *Solving the "Volatile State" problem.*
-- [ ] **NATS Key-Value (KV):** Replace local `sync.Map` with JetStream KV.
-- [ ] **Global State:** Implement `host_kv_set` / `host_kv_get` backed by distributed KV.
-- [ ] **Consistency:** Ensure keys written on Node A are instantly readable on Node B.
+- [x] **NATS Key-Value (KV):** Replace local `sync.Map` with JetStream KV.
+- [x] **Global State:** Implement `host_kv_set` / `host_kv_get` backed by distributed KV.
+- [x] **Consistency:** Ensure keys written on Node A are instantly readable on Node B.
 
-### 🔴 Phase 22: The Overwatch (Distributed Observability)
+### 🔴 Phase 22: The Overwatch (Distributed Observability) (DONE v0.22.0)
 *Solving the "Black Box" problem in a mesh.*
-- [ ] **OpenTelemetry + NATS:** Inject TraceIDs into NATS message headers.
-- [ ] **NATS Metrics:** Export queue lag, msg/sec, and consumer status to Prometheus.
-- [ ] **Distributed Tracing:** Correlate Caddy RequestIDs with Worker processing across nodes.
+- [x] **OpenTelemetry + NATS:** Inject TraceIDs into NATS message headers.
+- [x] **NATS Metrics:** Export queue lag, msg/sec, and consumer status to Prometheus.
+- [x] **Distributed Tracing:** Correlate Caddy RequestIDs with Worker processing across nodes.
+
+### 🟡 Phase 23: The Fortress (Security & Hardening)
+*Solving the "Open Door" problem.*
+- [ ] **NATS Auth (NKeys):** Secure the cluster using Ed25519 signatures (NKeys) instead of plain passwords. Only authorized nodes can join.
+- [ ] **WASM Permissions:** Implement a "Scopes/Capabilities" system (e.g., Module A can read KV users but cannot write).
+- [ ] **Host Function Guard:** Block access to sensitive host functions (e.g., host_s3_put, host_net_connect) based on module configuration.
 
 ---
 
 ## 🔮 PART VII: THE NEXT GENERATION (Future)
 
-### 🤖 Phase 23: The Agentic Interface (MCP)
+### 🤖 Phase 24: The Agentic Interface (MCP)
 - [ ] **Auto-MCP Generation:** Expose WASM functions as tools for Claude/OpenAI agents.
 - [ ] **Semantic Router:** Natural language routing to functions.
 
-### 💎 Phase 24: The Sync Engine (Via LibSQL)
+### 💎 Phase 25: The Sync Engine (Via LibSQL)
 - [ ] **LibSQL Integration:** Replace standard SQLite driver with LibSQL server mode.
 - [ ] **Replication Tunnel:** Expose replication protocol safely via Caddy/WebSockets.
 
