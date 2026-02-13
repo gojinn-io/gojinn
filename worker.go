@@ -18,15 +18,14 @@ import (
 
 const (
 	MaxRetries     = 5
-	MaxOutputBytes = 5 * 1024 * 1024 // 5MB Hard Limit de RAM/IO por execução de inquilino
+	MaxOutputBytes = 5 * 1024 * 1024
 )
 
-// cappedWriter agora tem o poder de cancelar a CPU
 type cappedWriter struct {
 	buf     *bytes.Buffer
 	limit   int
 	written int
-	cancel  context.CancelFunc // 🚨 O Cabo de Força
+	cancel  context.CancelFunc
 }
 
 func (cw *cappedWriter) Write(p []byte) (int, error) {
@@ -37,7 +36,6 @@ func (cw *cappedWriter) Write(p []byte) (int, error) {
 			cw.written += allowed
 		}
 
-		// 💥 SE PASSAR DO LIMITE, MATA A EXECUÇÃO IMEDIATAMENTE! 💥
 		if cw.cancel != nil {
 			cw.cancel()
 		}
@@ -63,7 +61,6 @@ func (r *Gojinn) runSyncJob(ctx context.Context, wasmPath string, input string) 
 	stdout := new(bytes.Buffer)
 	stderr := new(bytes.Buffer)
 
-	// Adicionamos o cancel context na execução síncrona também
 	execCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -115,7 +112,6 @@ func (r *Gojinn) startTenantWorker(tenantID string, streamName string, id int, t
 		deliverCount := meta.NumDelivered
 		_ = m.InProgress()
 
-		// 🚨 RESOURCE QUOTA: Limite de Tempo CPU
 		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(r.Timeout))
 		defer cancel()
 
@@ -127,7 +123,6 @@ func (r *Gojinn) startTenantWorker(tenantID string, streamName string, id int, t
 		stderrBuf.Reset()
 		defer bufferPool.Put(stderrBuf)
 
-		// 🚨 INJETANDO O CANCEL NA GUILHOTINA
 		cwOut := &cappedWriter{buf: stdoutBuf, limit: MaxOutputBytes, cancel: cancel}
 		cwErr := &cappedWriter{buf: stderrBuf, limit: MaxOutputBytes, cancel: cancel}
 
@@ -150,7 +145,6 @@ func (r *Gojinn) startTenantWorker(tenantID string, streamName string, id int, t
 
 		mod, err := pair.Runtime.InstantiateModule(ctx, pair.Code, modConfig)
 		if err != nil {
-			// Como nós cancelamos o contexto à força, o erro real capturado aqui será "context canceled"
 			errMsg := fmt.Sprintf("Wasm Error/Quota Exceeded: %v | Stderr: %s", err, stderrBuf.String())
 
 			if deliverCount >= MaxRetries {
@@ -187,10 +181,8 @@ func (r *Gojinn) startTenantWorker(tenantID string, streamName string, id int, t
 			errStr := strings.TrimSpace(stderrBuf.String())
 			timestamp := time.Now().UTC().Format(time.RFC3339)
 
-			// O Payload é a prova exata do que aconteceu nesta execução
 			payload := fmt.Sprintf("tenant:%s|job:%d|out:%s|err:%s|ts:%s", tenantID, meta.Sequence.Stream, outStr, errStr, timestamp)
 
-			// Assina com HMAC-SHA256 usando a chave mestra do servidor
 			secret := r.StoreCipherKey
 			if secret == "" {
 				secret = "gojinn-default-audit-secret"
@@ -208,7 +200,7 @@ func (r *Gojinn) startTenantWorker(tenantID string, streamName string, id int, t
 			auditJSON, _ := json.Marshal(auditData)
 
 			auditKey := fmt.Sprintf("audit.job.%d", meta.Sequence.Stream)
-			_, _ = kv.Put(auditKey, auditJSON) // Salva no cofre isolado do Inquilino
+			_, _ = kv.Put(auditKey, auditJSON)
 
 			r.logger.Info("Signed Audit Log Saved", zap.String("tenant", tenantID), zap.String("audit_key", auditKey), zap.String("signature", signature[:16]+"..."))
 		}
