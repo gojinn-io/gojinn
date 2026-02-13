@@ -107,6 +107,12 @@ func (g *Gojinn) startEmbeddedNATS() error {
 		},
 	}
 
+	if g.StoreCipherKey != "" {
+		g.logger.Warn("🔒 Disk Encryption At-Rest is ENABLED. Do not lose the cipher key!")
+		opts.JetStreamKey = g.StoreCipherKey
+		opts.JetStreamCipher = server.AES
+	}
+
 	if opts.ServerName == "" {
 		opts.ServerName = fmt.Sprintf("gojinn-node-%d", g.ClusterPort)
 	}

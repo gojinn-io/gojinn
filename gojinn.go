@@ -130,6 +130,8 @@ type Gojinn struct {
 	ClusterReplicas int               `json:"cluster_replicas,omitempty"`
 	Consensus       []ConsensusPolicy `json:"consensus,omitempty"`
 
+	StoreCipherKey string `json:"store_cipher_key,omitempty"`
+
 	ServerName string `json:"server_name,omitempty"`
 
 	LeafRemotes []string `json:"leaf_remotes,omitempty"`

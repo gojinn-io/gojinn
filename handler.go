@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -98,6 +99,61 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 			}
 			return nil
 		}
+
+		if req.Method == "POST" && req.URL.Path == "/_sys/snapshot" {
+			snapshotPath, err := r.CreateGlobalSnapshot()
+
+			rw.Header().Set("Content-Type", "application/json")
+			if err != nil {
+				rw.WriteHeader(http.StatusInternalServerError)
+				_ = json.NewEncoder(rw).Encode(map[string]string{
+					"status": "error",
+					"error":  err.Error(),
+				})
+				return nil
+			}
+
+			_ = json.NewEncoder(rw).Encode(map[string]string{
+				"status": "success",
+				"msg":    "Global Snapshot generated successfully",
+				"file":   snapshotPath,
+			})
+			return nil
+		}
+	}
+
+	if req.Method == "POST" && req.URL.Path == "/_sys/restore" {
+		var payload struct {
+			File string `json:"file"`
+		}
+		if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+			http.Error(rw, "Invalid JSON payload", 400)
+			return nil
+		}
+
+		if payload.File == "" {
+			http.Error(rw, "Missing 'file' parameter", 400)
+			return nil
+		}
+
+		rw.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(rw).Encode(map[string]string{
+			"status": "success",
+			"msg":    "Restore accepted. System is overwriting disks and will restart.",
+		})
+
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+
+			err := r.RestoreGlobalSnapshot(payload.File)
+			if err != nil {
+				r.logger.Fatal("Restore completely failed! Server is in an unknown state.", zap.Error(err))
+			}
+
+			os.Exit(0)
+		}()
+
+		return nil
 	}
 
 	if err := r.handleMiddleware(rw, req); err != nil {

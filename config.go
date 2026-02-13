@@ -349,7 +349,11 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 					}
 					m.Consensus = append(m.Consensus, policy)
 				}
-
+			case "store_cipher_key":
+				if !h.NextArg() {
+					return nil, h.Err("store_cipher_key requires a master password or cipher string")
+				}
+				m.StoreCipherKey = h.Val()
 			case "leaf_remotes":
 				m.LeafRemotes = append(m.LeafRemotes, h.RemainingArgs()...)
 			case "leaf_port":

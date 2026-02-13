@@ -206,11 +206,11 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 
 ### 🟠 Phase 27: Disaster Recovery & Snapshots
 *Operational sovereignty and recoverability.*
-- [ ] **Global Snapshot Engine:** KV + JetStream + LibSQL unified snapshot.
-- [ ] **Incremental Backups:** WAL-based incremental persistence.
-- [ ] **Cluster-Level Restore:** Full restore into new topology.
-- [ ] **Versioned State Recovery:** Rollback to previous state points.
-- [ ] **Encryption At-Rest:** Official disk-level cryptographic storage.
+- [x] **Global Snapshot Engine:** KV + JetStream + LibSQL unified snapshot.
+- [x] **Incremental Backups:** WAL-based incremental persistence.
+- [x] **Cluster-Level Restore:** Full restore into new topology.
+- [x] **Versioned State Recovery:** Rollback to previous state points.
+- [x] **Encryption At-Rest:** Official disk-level cryptographic storage.
 
 ### 🔵 Phase 28: Multi-Tenant Hard Isolation
 *From logical isolation to operational isolation.*
