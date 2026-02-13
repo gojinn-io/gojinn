@@ -29,6 +29,17 @@ var bufferPool = sync.Pool{
 }
 
 func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddyhttp.Handler) error {
+	if strings.HasPrefix(req.URL.Path, "/mcp") {
+		if req.URL.Path == "/mcp" || req.URL.Path == "/mcp/" {
+			r.ServeMCP(rw, req)
+			return nil
+		}
+		if req.URL.Path == "/mcp/message" {
+			r.HandleMCPMessage(rw, req)
+			return nil
+		}
+	}
+
 	if strings.HasPrefix(req.URL.Path, "/_sys/") {
 		if req.URL.Path == "/_sys/status" {
 			status := map[string]interface{}{

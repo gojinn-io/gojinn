@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nats-io/nats-server/v2/server"
@@ -13,7 +14,23 @@ import (
 	"go.uber.org/zap"
 )
 
+var (
+	activeServers   = make(map[int]*server.Server)
+	activeServersMu sync.Mutex
+)
+
 func (g *Gojinn) startEmbeddedNATS() error {
+	activeServersMu.Lock()
+	defer activeServersMu.Unlock()
+
+	if existing, ok := activeServers[g.NatsPort]; ok {
+		g.natsServer = existing
+		if g.logger != nil {
+			g.logger.Info("NATS server already running for this port, reusing instance", zap.Int("port", g.NatsPort))
+		}
+		return g.connectLocalClient()
+	}
+
 	storeDir := filepath.Join(g.DataDir, "nats_store")
 
 	fmt.Printf("\n--- STARTING NATS ---\n")
@@ -112,13 +129,23 @@ func (g *Gojinn) startEmbeddedNATS() error {
 		return fmt.Errorf("nats server failed to start (check logs above)")
 	}
 
-	clientURL := ns.ClientURL()
+	activeServers[g.NatsPort] = ns
+
 	g.logger.Info("Embedded NATS JetStream Started",
-		zap.String("url", clientURL),
+		zap.String("url", ns.ClientURL()),
 		zap.String("store_dir", storeDir),
 		zap.Int("leaf_remotes", len(leafRemotes)),
 	)
 
+	return g.connectLocalClient()
+}
+
+func (g *Gojinn) connectLocalClient() error {
+	if g.natsServer == nil {
+		return fmt.Errorf("cannot connect local client: nats server is nil")
+	}
+
+	clientURL := g.natsServer.ClientURL()
 	var connectOpts []nats.Option
 
 	if g.NatsUserSeed != "" {

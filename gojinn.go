@@ -25,6 +25,12 @@ func init() {
 	httpcaddyfile.RegisterHandlerDirective("gojinn", parseCaddyfile)
 }
 
+type FunctionDiscovery struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	InputSchema string `json:"input_schema"`
+}
+
 type Permissions struct {
 	KVRead  []string `json:"kv_read,omitempty"`
 	KVWrite []string `json:"kv_write,omitempty"`
@@ -59,6 +65,9 @@ type Gojinn struct {
 	TrustedNatsUsers []string `json:"trusted_nats_users,omitempty"`
 
 	Perms Permissions `json:"permissions,omitempty"`
+
+	ExposeAsTool bool              `json:"expose_as_tool,omitempty"`
+	ToolMeta     FunctionDiscovery `json:"tool_meta,omitempty"`
 
 	FuelLimit uint64            `json:"fuel_limit,omitempty"`
 	Mounts    map[string]string `json:"mounts,omitempty"`

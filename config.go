@@ -137,6 +137,25 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 					}
 				}
 
+			case "ai_tool":
+				m.ExposeAsTool = true
+				for nesting := h.Nesting(); h.NextBlock(nesting); {
+					switch h.Val() {
+					case "name":
+						if h.NextArg() {
+							m.ToolMeta.Name = h.Val()
+						}
+					case "description":
+						if h.NextArg() {
+							m.ToolMeta.Description = h.Val()
+						}
+					case "schema":
+						if h.NextArg() {
+							m.ToolMeta.InputSchema = h.Val()
+						}
+					}
+				}
+
 			case "security":
 				for nesting := h.Nesting(); h.NextBlock(nesting); {
 					switch h.Val() {
