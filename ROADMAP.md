@@ -212,12 +212,12 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 - [x] **Versioned State Recovery:** Rollback to previous state points.
 - [x] **Encryption At-Rest:** Official disk-level cryptographic storage.
 
-### 🔵 Phase 28: Multi-Tenant Hard Isolation
+### 🔵 Phase 28: Multi-Tenant Hard Isolation (DONE v0.28.0)
 *From logical isolation to operational isolation.*
-- [ ] **Tenant Namespaces:** Dedicated NATS subjects & KV prefixes.
-- [ ] **Per-Tenant Streams:** Isolated JetStream persistence.
-- [ ] **Resource Quotas:** CPU/RAM/IO enforcement per tenant.
-- [ ] **Signed Audit Logs:** Tenant-scoped cryptographically verifiable logs.
+- [x] **Tenant Namespaces:** Dedicated NATS subjects & KV prefixes.
+- [x] **Per-Tenant Streams:** Isolated JetStream persistence.
+- [x] **Resource Quotas:** CPU/RAM/IO enforcement per tenant.
+- [x] **Signed Audit Logs:** Tenant-scoped cryptographically verifiable logs.
 
 ### 🟣 Phase 29: Formal Security & Transparency
 *Trust through verification.*
