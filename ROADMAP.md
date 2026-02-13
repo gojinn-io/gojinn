@@ -196,13 +196,13 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 ---
 ## 🏛️ PART VIII: INSTITUTIONAL GRADE SOVEREIGNTY
 
-### 🟢 Phase 26: Deterministic Cluster & Consensus
+### 🟢 Phase 26: Deterministic Cluster & Consensus (DONE v0.26.0)
 *From distributed system to formally modeled distributed system.*
-- [ ] **Formal Leader Election:** Deterministic election for critical actors.
-- [ ] **Consistency Policies:** Configurable AP vs CP modes per namespace.
-- [ ] **Deterministic Failover:** Predictable actor relocation on node failure.
-- [ ] **Partition Policies:** Configurable behavior during network splits.
-- [ ] **Cluster State Machine:** Explicit distributed state model documentation.
+- [x] **Formal Leader Election:** Deterministic election for critical actors.
+- [x] **Consistency Policies:** Configurable AP vs CP modes per namespace.
+- [x] **Deterministic Failover:** Predictable actor relocation on node failure.
+- [x] **Partition Policies:** Configurable behavior during network splits.
+- [x] **Cluster State Machine:** Explicit distributed state model documentation.
 
 ### 🟠 Phase 27: Disaster Recovery & Snapshots
 *Operational sovereignty and recoverability.*

@@ -129,6 +129,13 @@ func (r *Gojinn) startWorkerSubscriber(id int, topic string, wasmBytes []byte) (
 			return
 		}
 
+		if stdoutBuf.Len() > 0 {
+			r.logger.Info("Worker Output", zap.String("stdout", strings.TrimSpace(stdoutBuf.String())))
+		}
+		if stderrBuf.Len() > 0 {
+			r.logger.Info("Worker Log", zap.String("stderr", strings.TrimSpace(stderrBuf.String())))
+		}
+
 		mod.Close(ctx)
 		_ = m.Ack()
 

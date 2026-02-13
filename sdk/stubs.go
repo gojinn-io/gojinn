@@ -18,3 +18,10 @@ func (k KVStoreStub) Set(key, value string)         {}
 func (k KVStoreStub) Get(key string) (string, bool) { return "", false }
 
 var KV = KVStoreStub{}
+
+type MutexServiceStub struct{}
+
+func (m MutexServiceStub) TryLock(key string, ttlSeconds uint32) bool { return false }
+func (m MutexServiceStub) Unlock(key string) bool                     { return false }
+
+var Mutex = MutexServiceStub{}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/coder/websocket"
 	"github.com/tetratelabs/wazero"
@@ -174,6 +175,68 @@ func (r *Gojinn) buildHostModule(ctx context.Context, engine wazero.Runtime) err
 			stack[0] = uint64(bytesToWrite)
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI64}).
 		Export("host_kv_get").
+		NewFunctionBuilder().
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
+			//nolint:gosec
+			keyPtr := uint32(stack[0])
+			//nolint:gosec
+			keyLen := uint32(stack[1])
+			//nolint:gosec
+			ttlSeconds := uint32(stack[2])
+
+			kBytes, ok := mod.Memory().Read(keyPtr, keyLen)
+			if !ok {
+				stack[0] = 0
+				return
+			}
+			lockKey := "mutex_" + string(kBytes)
+
+			if r.kv == nil {
+				r.logger.Error("KV Store not ready for mutex")
+				stack[0] = 0
+				return
+			}
+
+			_, err := r.kv.Create(lockKey, []byte(fmt.Sprintf("%d", time.Now().UnixNano())))
+
+			if err != nil {
+				stack[0] = 0
+				return
+			}
+
+			_ = ttlSeconds
+
+			stack[0] = 1
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
+		Export("host_mutex_lock").
+		NewFunctionBuilder().
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
+			//nolint:gosec
+			keyPtr := uint32(stack[0])
+			//nolint:gosec
+			keyLen := uint32(stack[1])
+
+			kBytes, ok := mod.Memory().Read(keyPtr, keyLen)
+			if !ok {
+				stack[0] = 0
+				return
+			}
+			lockKey := "mutex_" + string(kBytes)
+
+			if r.kv == nil {
+				stack[0] = 0
+				return
+			}
+
+			err := r.kv.Delete(lockKey)
+			if err != nil {
+				stack[0] = 0
+				return
+			}
+
+			stack[0] = 1
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
+		Export("host_mutex_unlock").
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
 			//nolint:gosec

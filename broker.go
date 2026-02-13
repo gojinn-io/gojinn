@@ -199,13 +199,13 @@ func (g *Gojinn) ensureJetStreamResources() {
 
 		_, err := g.js.StreamInfo(streamName)
 		if err != nil {
-			g.logger.Info("Attempting to initialize Durable Stream...", zap.String("stream", streamName))
+			g.logger.Info("Attempting to initialize Durable Stream...", zap.String("stream", streamName), zap.Int("replicas", g.ClusterReplicas))
 			_, err = g.js.AddStream(&nats.StreamConfig{
 				Name:      streamName,
 				Subjects:  []string{"gojinn.exec.>"},
 				Storage:   nats.FileStorage,
 				Retention: nats.WorkQueuePolicy,
-				Replicas:  1,
+				Replicas:  g.ClusterReplicas,
 			})
 			if err != nil {
 				g.logger.Warn("Stream creation pending...", zap.Error(err))
@@ -221,6 +221,7 @@ func (g *Gojinn) ensureJetStreamResources() {
 				Storage:     nats.FileStorage,
 				History:     1,
 				TTL:         0,
+				Replicas:    g.ClusterReplicas,
 			})
 
 			if err != nil {

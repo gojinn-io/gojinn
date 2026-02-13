@@ -319,6 +319,37 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				m.ClusterPort = port
 			case "cluster_peers":
 				m.ClusterPeers = append(m.ClusterPeers, h.RemainingArgs()...)
+
+			case "cluster_replicas":
+				if !h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				val, err := strconv.Atoi(h.Val())
+				if err != nil {
+					return nil, h.Errf("invalid cluster_replicas: %v", err)
+				}
+				m.ClusterReplicas = val
+
+			case "consensus":
+				for nesting := h.Nesting(); h.NextBlock(nesting); {
+					var policy ConsensusPolicy
+					policy.Namespace = h.Val()
+
+					for nesting2 := h.Nesting(); h.NextBlock(nesting2); {
+						switch h.Val() {
+						case "mode":
+							if h.NextArg() {
+								policy.Mode = h.Val()
+							}
+						case "stale_reads":
+							if h.NextArg() {
+								policy.StaleReads = h.Val() == "true"
+							}
+						}
+					}
+					m.Consensus = append(m.Consensus, policy)
+				}
+
 			case "leaf_remotes":
 				m.LeafRemotes = append(m.LeafRemotes, h.RemainingArgs()...)
 			case "leaf_port":

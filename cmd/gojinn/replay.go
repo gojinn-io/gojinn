@@ -80,6 +80,8 @@ var replayCmd = &cobra.Command{
 			NewFunctionBuilder().WithFunc(func() {}).Export("host_db_query").
 			NewFunctionBuilder().WithFunc(func() {}).Export("host_kv_set").
 			NewFunctionBuilder().WithFunc(func() uint64 { return 0 }).Export("host_kv_get").
+			NewFunctionBuilder().WithFunc(func() uint32 { return 1 }).Export("host_mutex_lock").
+			NewFunctionBuilder().WithFunc(func() uint32 { return 1 }).Export("host_mutex_unlock").
 			NewFunctionBuilder().WithFunc(func() uint32 { return 0 }).Export("host_s3_put").
 			NewFunctionBuilder().WithFunc(func() uint32 { return 0 }).Export("host_s3_get").
 			NewFunctionBuilder().WithFunc(func() uint32 { return 0 }).Export("host_enqueue").

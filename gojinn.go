@@ -37,6 +37,11 @@ type Permissions struct {
 	S3Read  []string `json:"s3_read,omitempty"`
 	S3Write []string `json:"s3_write,omitempty"`
 }
+type ConsensusPolicy struct {
+	Namespace  string `json:"namespace"`
+	Mode       string `json:"mode"`
+	StaleReads bool   `json:"stale_reads"`
+}
 
 type Gojinn struct {
 	Path        string            `json:"path,omitempty"`
@@ -121,7 +126,11 @@ type Gojinn struct {
 	ClusterName  string   `json:"cluster_name,omitempty"`
 	ClusterPort  int      `json:"cluster_port,omitempty"`
 	ClusterPeers []string `json:"cluster_peers,omitempty"`
-	ServerName   string   `json:"server_name,omitempty"`
+
+	ClusterReplicas int               `json:"cluster_replicas,omitempty"`
+	Consensus       []ConsensusPolicy `json:"consensus,omitempty"`
+
+	ServerName string `json:"server_name,omitempty"`
 
 	LeafRemotes []string `json:"leaf_remotes,omitempty"`
 	LeafPort    int      `json:"leaf_port,omitempty"`
@@ -162,6 +171,10 @@ func (r *Gojinn) Provision(ctx caddy.Context) error {
 
 	if r.ClusterName == "" {
 		r.ClusterName = "gojinn-cluster"
+	}
+
+	if r.ClusterReplicas <= 0 {
+		r.ClusterReplicas = 1
 	}
 
 	if err := r.startEmbeddedNATS(); err != nil {
