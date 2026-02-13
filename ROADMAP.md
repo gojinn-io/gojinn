@@ -175,11 +175,11 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 - [x] **NATS Metrics:** Export queue lag, msg/sec, and consumer status to Prometheus.
 - [x] **Distributed Tracing:** Correlate Caddy RequestIDs with Worker processing across nodes.
 
-### 🟡 Phase 23: The Fortress (Security & Hardening)
+### 🟡 Phase 23: The Fortress (Security & Hardening) (DONE v0.23.0)
 *Solving the "Open Door" problem.*
-- [ ] **NATS Auth (NKeys):** Secure the cluster using Ed25519 signatures (NKeys) instead of plain passwords. Only authorized nodes can join.
-- [ ] **WASM Permissions:** Implement a "Scopes/Capabilities" system (e.g., Module A can read KV users but cannot write).
-- [ ] **Host Function Guard:** Block access to sensitive host functions (e.g., host_s3_put, host_net_connect) based on module configuration.
+- [x] **NATS Auth (NKeys):** Secure the cluster using Ed25519 signatures (NKeys) instead of plain passwords. Only authorized nodes can join.
+- [x] **WASM Permissions:** Implement a "Scopes/Capabilities" system (e.g., Module A can read KV users but cannot write).
+- [x] **Host Function Guard:** Block access to sensitive host functions (e.g., host_s3_put, host_net_connect) based on module configuration.
 
 ---
 

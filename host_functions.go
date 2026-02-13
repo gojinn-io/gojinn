@@ -3,12 +3,25 @@ package gojinn
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/coder/websocket"
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
 	"go.uber.org/zap"
 )
+
+func isAllowed(item string, allowedList []string) bool {
+	if len(allowedList) == 0 {
+		return false
+	}
+	for _, a := range allowedList {
+		if a == "*" || a == item || strings.HasPrefix(item, a) {
+			return true
+		}
+	}
+	return false
+}
 
 func (r *Gojinn) buildHostModule(ctx context.Context, engine wazero.Runtime) error {
 	_, err := engine.NewHostModuleBuilder("gojinn").
@@ -88,6 +101,11 @@ func (r *Gojinn) buildHostModule(ctx context.Context, engine wazero.Runtime) err
 			}
 			key := string(kBytes)
 
+			if !isAllowed(key, r.Perms.KVWrite) {
+				r.logger.Warn("Security Violation: Module tried to write unauthorized KV key", zap.String("key", key))
+				return
+			}
+
 			vBytes, ok := mod.Memory().Read(valPtr, valLen)
 			if !ok {
 				return
@@ -122,6 +140,12 @@ func (r *Gojinn) buildHostModule(ctx context.Context, engine wazero.Runtime) err
 				return
 			}
 			key := string(kBytes)
+
+			if !isAllowed(key, r.Perms.KVRead) {
+				r.logger.Warn("Security Violation: Module tried to read unauthorized KV key", zap.String("key", key))
+				stack[0] = 0xFFFFFFFFFFFFFFFF
+				return
+			}
 
 			if r.kv == nil {
 				stack[0] = 0xFFFFFFFFFFFFFFFF
@@ -167,6 +191,12 @@ func (r *Gojinn) buildHostModule(ctx context.Context, engine wazero.Runtime) err
 			}
 			key := string(kBytes)
 
+			if !isAllowed(r.S3Bucket, r.Perms.S3Write) {
+				r.logger.Warn("Security Violation: Module tried to write to unauthorized S3 bucket", zap.String("bucket", r.S3Bucket))
+				stack[0] = 1
+				return
+			}
+
 			bBytes, ok := mod.Memory().Read(bodyPtr, bodyLen)
 			if !ok {
 				stack[0] = 1
@@ -199,6 +229,12 @@ func (r *Gojinn) buildHostModule(ctx context.Context, engine wazero.Runtime) err
 				return
 			}
 			key := string(kBytes)
+
+			if !isAllowed(r.S3Bucket, r.Perms.S3Read) {
+				r.logger.Warn("Security Violation: Module tried to read from unauthorized S3 bucket", zap.String("bucket", r.S3Bucket))
+				stack[0] = 0
+				return
+			}
 
 			valBytes, err := r.s3Get(ctx, key)
 			if err != nil {

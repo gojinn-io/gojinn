@@ -9,6 +9,7 @@ import (
 
 	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nkeys"
 	"go.uber.org/zap"
 )
 
@@ -37,14 +38,30 @@ func (g *Gojinn) startEmbeddedNATS() error {
 			g.logger.Warn("Invalid leaf remote URL", zap.String("url", remoteUrl), zap.Error(err))
 			continue
 		}
-		leafRemotes = append(leafRemotes, &server.RemoteLeafOpts{
+
+		remoteOpt := &server.RemoteLeafOpts{
 			URLs: []*url.URL{u},
-		})
+		}
+
+		if g.NatsUserSeed != "" {
+			remoteOpt.Nkey = g.NatsUserSeed
+		}
+
+		leafRemotes = append(leafRemotes, remoteOpt)
 	}
 
 	leafPort := g.LeafPort
 	if leafPort == 0 {
 		leafPort = 7422
+	}
+
+	var nkeyUsers []*server.NkeyUser
+	if len(g.TrustedNatsUsers) > 0 {
+		for _, pubKey := range g.TrustedNatsUsers {
+			nkeyUsers = append(nkeyUsers, &server.NkeyUser{
+				Nkey: pubKey,
+			})
+		}
 	}
 
 	opts := &server.Options{
@@ -56,6 +73,8 @@ func (g *Gojinn) startEmbeddedNATS() error {
 		StoreDir:           storeDir,
 		JetStreamMaxStore:  1 * 1024 * 1024 * 1024,
 		JetStreamMaxMemory: 64 * 1024 * 1024,
+
+		Nkeys: nkeyUsers,
 
 		Cluster: server.ClusterOpts{
 			Name: g.ClusterName,
@@ -100,7 +119,29 @@ func (g *Gojinn) startEmbeddedNATS() error {
 		zap.Int("leaf_remotes", len(leafRemotes)),
 	)
 
-	nc, err := nats.Connect(clientURL)
+	var connectOpts []nats.Option
+
+	if g.NatsUserSeed != "" {
+		kp, err := nkeys.FromSeed([]byte(g.NatsUserSeed))
+		if err != nil {
+			return fmt.Errorf("invalid nats_user_seed format: %w", err)
+		}
+
+		pub, err := kp.PublicKey()
+		if err != nil {
+			return fmt.Errorf("failed to get public key: %w", err)
+		}
+
+		connectOpts = append(connectOpts, nats.Nkey(pub, func(nonce []byte) ([]byte, error) {
+			sig, err := kp.Sign(nonce)
+			if err != nil {
+				return nil, err
+			}
+			return sig, nil
+		}))
+	}
+
+	nc, err := nats.Connect(clientURL, connectOpts...)
 	if err != nil {
 		return fmt.Errorf("failed to connect to local NATS: %w", err)
 	}

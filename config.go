@@ -29,8 +29,8 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	m.CorsOrigins = []string{}
 	m.TrustedKeys = []string{}
 	m.NatsRoutes = []string{}
-
 	m.ClusterPeers = []string{}
+	m.TrustedNatsUsers = []string{}
 
 	m.RateLimit = 0
 	m.RateBurst = 0
@@ -123,6 +123,20 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 					m.S3SecretKey = h.Val()
 				}
 
+			case "permissions":
+				for nesting := h.Nesting(); h.NextBlock(nesting); {
+					switch h.Val() {
+					case "kv_read":
+						m.Perms.KVRead = append(m.Perms.KVRead, h.RemainingArgs()...)
+					case "kv_write":
+						m.Perms.KVWrite = append(m.Perms.KVWrite, h.RemainingArgs()...)
+					case "s3_read":
+						m.Perms.S3Read = append(m.Perms.S3Read, h.RemainingArgs()...)
+					case "s3_write":
+						m.Perms.S3Write = append(m.Perms.S3Write, h.RemainingArgs()...)
+					}
+				}
+
 			case "security":
 				for nesting := h.Nesting(); h.NextBlock(nesting); {
 					switch h.Val() {
@@ -150,6 +164,15 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				}
 			case "nats_routes":
 				m.NatsRoutes = append(m.NatsRoutes, h.RemainingArgs()...)
+
+			case "nats_user_seed":
+				if !h.NextArg() {
+					return nil, h.Err("nats_user_seed requires a seed string (starts with SU...)")
+				}
+				m.NatsUserSeed = h.Val()
+
+			case "trusted_nats_users":
+				m.TrustedNatsUsers = append(m.TrustedNatsUsers, h.RemainingArgs()...)
 
 			case "cron":
 				var job CronJob

@@ -25,6 +25,13 @@ func init() {
 	httpcaddyfile.RegisterHandlerDirective("gojinn", parseCaddyfile)
 }
 
+type Permissions struct {
+	KVRead  []string `json:"kv_read,omitempty"`
+	KVWrite []string `json:"kv_write,omitempty"`
+	S3Read  []string `json:"s3_read,omitempty"`
+	S3Write []string `json:"s3_write,omitempty"`
+}
+
 type Gojinn struct {
 	Path        string            `json:"path,omitempty"`
 	Args        []string          `json:"args,omitempty"`
@@ -47,6 +54,11 @@ type Gojinn struct {
 	natsServer *server.Server
 	natsConn   *nats.Conn
 	js         nats.JetStreamContext
+
+	NatsUserSeed     string   `json:"nats_user_seed,omitempty"`
+	TrustedNatsUsers []string `json:"trusted_nats_users,omitempty"`
+
+	Perms Permissions `json:"permissions,omitempty"`
 
 	FuelLimit uint64            `json:"fuel_limit,omitempty"`
 	Mounts    map[string]string `json:"mounts,omitempty"`
