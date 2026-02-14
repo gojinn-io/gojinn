@@ -4,12 +4,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
-	_ "github.com/tursodatabase/go-libsql"
 	"go.uber.org/zap"
 	_ "modernc.org/sqlite"
 )
@@ -19,33 +17,17 @@ func (r *Gojinn) setupDB() error {
 		return nil
 	}
 
+	driver := r.DBDriver
 	dsn := r.DBDSN
 
-	if r.DBDriver == "libsql" && r.DBSyncURL != "" {
-
-		if !strings.HasPrefix(dsn, "file:") && !strings.HasPrefix(dsn, "libsql:") && !strings.HasPrefix(dsn, "http:") && !strings.HasPrefix(dsn, "https:") {
+	if driver == "libsql" || driver == "sqlite3" {
+		driver = "sqlite"
+		if !strings.HasPrefix(dsn, "file:") && !strings.Contains(dsn, ":memory:") {
 			dsn = "file:" + dsn
 		}
-
-		u, err := url.Parse(dsn)
-		if err != nil {
-			return fmt.Errorf("invalid db_dsn format: %w", err)
-		}
-
-		q := u.Query()
-		q.Set("syncUrl", r.DBSyncURL)
-		if r.DBSyncToken != "" {
-			q.Set("authToken", r.DBSyncToken)
-		}
-		q.Set("syncInterval", "5s")
-
-		u.RawQuery = q.Encode()
-		dsn = u.String()
-
-		r.logger.Info("Configuring LibSQL Embedded Replica", zap.String("syncUrl", r.DBSyncURL))
 	}
 
-	db, err := sql.Open(r.DBDriver, dsn)
+	db, err := sql.Open(driver, dsn)
 	if err != nil {
 		return fmt.Errorf("failed to open db: %w", err)
 	}
@@ -65,7 +47,7 @@ func (r *Gojinn) setupDB() error {
 
 	r.db = db
 	r.logger.Info("host database connection pool established",
-		zap.String("driver", r.DBDriver),
+		zap.String("driver", driver),
 		zap.Int("max_conns", maxConns))
 
 	return nil
