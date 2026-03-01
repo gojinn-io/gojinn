@@ -4,10 +4,10 @@ package sdk
 
 import "unsafe"
 
-//go:wasmimport
+//go:wasmimport gojinn host_mutex_lock
 func host_mutex_lock(kPtr uint32, kLen uint32, ttlSeconds uint32) uint32
 
-//go:wasmimport
+//go:wasmimport gojinn host_mutex_unlock
 func host_mutex_unlock(kPtr uint32, kLen uint32) uint32
 
 type MutexService struct{}

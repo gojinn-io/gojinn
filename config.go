@@ -368,6 +368,10 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 					return nil, h.ArgErr()
 				}
 				m.ServerName = h.Val()
+			case "sentry_dsn":
+				if h.NextArg() {
+					m.SentryDSN = h.Val()
+				}
 			}
 		}
 	}
