@@ -5,74 +5,41 @@
 [![Wasm Engine](https://img.shields.io/badge/engine-wazero-purple)](https://wazero.io)
 [![Sponsor](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=%23fe8e86)](https://github.com/sponsors/pauloappbr)
 
-> **A Sovereign, In-Process Serverless Runtime for Caddy**  
+> **A Sovereign, In-Process Serverless Runtime for Caddy**
 > Execute untrusted code securely with WebAssembly — no containers, no orchestration, no control plane.
 
-Gojinn is a **high-performance WebAssembly runtime embedded directly into the Caddy web server**.  
-It allows you to run isolated, deterministic functions *inside the HTTP request lifecycle* — safely and with near-native performance.
+Gojinn is a **high-performance WebAssembly runtime embedded directly into the Caddy web server**.
+It allows you to run isolated, deterministic functions *inside the HTTP request lifecycle* — safely and with near-native performance. It replaces the complexity of K8s + API Gateways with a single, auditable binary.
 
 ---
 
 ## 🔑 What Gojinn Is (and Is Not)
 
 ### ✅ Gojinn is
-- A **WASM-based serverless runtime**
-- **Single-binary**, self-hosted, and auditable
-- Deterministic, sandboxed, and capability-based
-- Designed for **sovereign infrastructure** and edge environments
+- A **WASM-based serverless runtime** powered by Wazero.
+- **Single-binary**, self-hosted, and sovereign.
+- A complete stateful platform (Embedded NATS JetStream, SQLite/LibSQL, S3 bindings).
+- Deterministic, sandboxed, and capability-based (Ed25519 module signing).
 
 ### ❌ Gojinn is NOT
-- A container orchestrator
-- A Kubernetes replacement
-- A managed cloud service
-- A general-purpose VM or process supervisor
+- A container orchestrator or Kubernetes replacement.
+- A managed cloud service.
+- A general-purpose VM or process supervisor.
 
 > Gojinn executes **code and events** — not infrastructure.
 
 ---
 
-## 🚀 Why Gojinn?
+## 🚀 Key Features
 
-Modern serverless stacks suffer from:
-- cold starts
-- idle resource waste
-- infrastructure sprawl
-- opaque control planes
-- vendor lock-in
+Gojinn goes beyond execution. It provides a complete sovereign cloud primitives out-of-the-box:
 
-Gojinn takes a different approach:
-
-- **In-process execution** → no network hops, no sidecars
-- **Zero idle cost** → no requests, no memory usage
-- **Strong isolation** → every request runs in a fresh WASM sandbox
-- **Opinionated design** → fewer knobs, more correctness
-- **Open & Sovereign** → Apache-2.0, self-hosted, auditable
-
----
-
-## ⚡ Performance at a Glance
-
-| Metric | Docker (Alpine/Go) | Gojinn (WASM) |
-|------|-------------------|---------------|
-| Artifact Size | ~20 MB image | ~3 MB binary |
-| Execution Model | Persistent daemon | Ephemeral sandbox |
-| Idle Resource Usage | Always-on | Zero |
-| Cold Start | ~1500ms | **<1ms** |
-
-> Gojinn prioritizes **predictable latency and isolation** over long-lived processes.
-
-Detailed benchmarks: [`docs/benchmark.md`](docs/benchmark.md)
-
----
-
-## 🧠 Core Design Invariant
-
-> **All user code executes inside a deterministic, isolated, ephemeral WASM sandbox and is never trusted by default.**
-
-This invariant is **non-negotiable** and enforced by governance.  
-Any feature or contribution that violates it will be rejected.
-
-See: [`GOVERNANCE.md`](GOVERNANCE.md)
+* **⚡ In-Process Execution:** No network hops, zero idle cost. Cold starts in `<1ms`.
+* **🔐 Cryptographic Sovereignty:** Strict Ed25519 signature verification for all WASM modules before execution.
+* **💾 Built-in State & Storage:** Host-level connection pooling for SQLite/LibSQL, embedded S3 client, and isolated Key-Value stores per tenant.
+* **📨 Embedded Message Broker:** Integrated NATS JetStream for async background jobs, MQTT event triggers, and multi-tenant queues.
+* **🧠 AI & Agentic Routing:** Native LLM integration with semantic routing and Model Context Protocol (MCP) tool exposure.
+* **⏪ Time-Travel Debugging:** Automatic crash dumps capturing memory state and inputs, replayable locally via CLI.
 
 ---
 
@@ -85,29 +52,41 @@ sequenceDiagram
     Client->>Caddy: HTTP Request
     Caddy->>Gojinn: Intercept + Context Injection
     Gojinn->>Wazero: Create Sandbox (CPU / Memory limits)
-    Wazero->>WASM: JSON via stdin
+    Wazero->>WASM: JSON via stdin + Host Functions (DB, S3, KV)
     WASM->>Wazero: JSON via stdout
     Wazero->>Gojinn: Response
     Gojinn->>Caddy: Stream Response
     Gojinn->>Wazero: Destroy Sandbox
 ```
 
-Architecture details: `docs/concepts/architecture.md`
+Read the full Architecture Concepts and Threat Model.
 
-## 🛠 Installation
+---
 
-Gojinn is distributed as a Caddy plugin.
+## 🛠 Tooling & Installation
 
-### Using xcaddy (recommended)
+Gojinn ships with a powerful CLI to manage your sovereign cloud.
+
+### 1. Install via xcaddy (Server)
 
 ```bash
-xcaddy build \
-  --with github.com/pauloappbr/gojinn
+xcaddy build --with github.com/pauloappbr/gojinn
 ```
+
+### 2. The Gojinn CLI
+
+Develop, sign, and deploy with the native CLI toolkit:
+
+- `gojinn init [name]` - Scaffold a new WASM function (HTTP or WebSocket Actor).
+- `gojinn up` - Build all functions, sign binaries, and start the Caddy server.
+- `gojinn deploy [path]` - Hot-reload a single function without dropping traffic.
+- `gojinn replay [crash.json]` - Load a crash dump for local time-travel debugging.
+
+---
 
 ## ⚙️ Configuration (Caddyfile)
 
-```caddy
+```caddyfile
 {
     order gojinn last
     admin :2019
@@ -118,9 +97,18 @@ xcaddy build \
         gojinn ./functions/processor.wasm {
             timeout 2s
             memory_limit 128MB
-
-            env DB_HOST "localhost"
-            env API_KEY {env.SECRET_KEY}
+            pool_size 10
+            
+            # Embedded Services
+            db_driver sqlite3
+            db_dsn ./data/tenant.db
+            s3_bucket "sovereign-data"
+            
+            # Security Policies
+            security {
+                policy strict
+                trusted_key {env.PUB_KEY}
+            }
         }
     }
 }
@@ -128,60 +116,62 @@ xcaddy build \
 
 Full reference: `docs/reference/caddyfile.md`
 
-## 🧩 Writing Functions (The Contract)
 
-Gojinn uses a strict JSON protocol over stdin/stdout.
+## 🧩 Polyglot SDKs
 
-- `stdin` → request context (JSON)
-- `stdout` → response (JSON)
-- `stderr` → logs only
+Gojinn uses a strict JSON protocol over stdin/stdout and exposes advanced capabilities via Host Functions (WASI). We provide official SDKs for seamless integration:
 
-Language support is polyglot via WASM:
+- **Go:** `import "github.com/pauloappbr/gojinn/sdk"`
+- **Rust:** Supported via `sdk/rust/`
+- **JavaScript/TypeScript:** Supported via `sdk/js/` and Javy
 
-- Go
-- Rust
-- Zig
-- C / C++
-- Swift (experimental)
+See the Contract Definition for writing raw WASM modules.
 
-Contract definition: `docs/concepts/contract.md`
 
 ## 📊 Observability
 
-Built-in, no sidecars required:
+Built for operational rigor, no sidecars required:
 
-- Metrics → Prometheus
-- Tracing → OpenTelemetry
-- Logs → Structured, via Caddy
+- **Metrics:** Prometheus (`http://localhost:2019/metrics`)
+- **Tracing:** OpenTelemetry (Context propagation across NATS and HTTP)
+- **Logs:** Structured, via Caddy
 
-Metrics endpoint:
-
-```bash
-http://localhost:2019/metrics
-```
+---
 
 ## 📚 Documentation
 
-- Getting Started
-- Guides
-- Concepts
-- Use Cases
+- [Getting Started & Installation](docs/getting-started/installation.md)
+- [Deployment Guide](docs/guides/deployment.md)
+- [Debugging & Crash Replay](docs/guides/debugging.md)
+- [Use Cases](docs/use-cases.md)
+- [Design Document](DESIGN.md)
+- [Project Whitepaper](docs/WHITEPAPER.md)
+
 
 ## 🧭 Project Direction
 
-- Roadmap
-- Manifesto
-- Governance
-
 Gojinn is built with long-term correctness, not short-term convenience.
 
-## 🤝 Community & Support
+- [Roadmap](ROADMAP.md)
+- [FAQ](FAQ.md)
+- [Governance](GOVERNANCE.md)
 
-- Contributions
-- Support policy
-- Security issues
+
+## 🤝 Contributing & Community
+
+Gojinn is currently in its early, active development phase. As I am currently laying down the core architecture, I am actively looking for passionate contributors to join the effort! Whether you are interested in Go, WebAssembly, Caddy internals, or just want to help build a sovereign cloud tool, your PRs, issues, and ideas are highly welcome.
+
+---
+
+## 💖 Sponsors & Supporters
+
+Building a robust, open-source serverless runtime takes time and dedication. If Gojinn is useful to you or your company, consider supporting the project!
+
+### Official Sponsors
+We are incredibly grateful to our official sponsors for supporting the development of Gojinn:
+
+---
 
 ## 📄 License
 
-Apache License 2.0  
-See LICENSE
+[Apache License 2.0](LICENSE)

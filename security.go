@@ -2,12 +2,14 @@ package gojinn
 
 import (
 	"crypto/ed25519"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"go.uber.org/zap"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/pauloappbr/gojinn/pkg/sovereign"
 )
 
@@ -70,5 +72,20 @@ func (g *Gojinn) saveCrashDump(filename string, data []byte) {
 		g.logger.Error("Failed to write crash dump", zap.Error(err))
 	} else {
 		g.logger.Info("Crash Dump Saved (Time Travel Ready)", zap.String("file", fullPath))
+	}
+
+	if g.SentryDSN != "" {
+		var snapshot CrashSnapshot
+		if err := json.Unmarshal(data, &snapshot); err == nil {
+			sentry.WithScope(func(scope *sentry.Scope) {
+				scope.SetTag("wasm_file", snapshot.WasmFile)
+				scope.SetExtra("input_payload", string(snapshot.Input))
+
+				envBytes, _ := json.Marshal(snapshot.Env)
+				scope.SetExtra("env_vars", string(envBytes))
+
+				sentry.CaptureMessage(fmt.Sprintf("WASM Crash in %s: %s", snapshot.WasmFile, snapshot.Error))
+			})
+		}
 	}
 }

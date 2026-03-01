@@ -234,6 +234,16 @@ Our goal is to replace the fragmented stack of AWS Lambda + SQS + RDS + Kubernet
 - [x] **Official Whitepaper:** Comprehensive Architecture + CAP Model (WHITEPAPER.md).
 - [x] **Public Benchmarks:** Verified 9.7k RPS with 0.67ms min latency.
 
+### 🛡️ Phase 31: Operational Hardening
+*Proving the Sovereign Cloud is unbreakable.*
+- [ ] **NATS Rate Limiting:** Implement per Tenant ID.
+- [ ] **Egress Policies:** Support granular policies in Caddyfile per tenant.
+- [ ] **DNS Security:** Block unauthorized outbound DNS.
+- [ ] **Weighted Round-Robin:** Implement in job dispatcher.
+- [ ] **Chaos Engineering:** Force CPU saturation on a single Tenant to verify impact on neighbors.
+- [ ] **Failure Playbooks:** Write playbooks (e.g., Raft Split Brain recovery).
+- [ ] **Vulnerability Disclosure:** Create formal policy (SECURITY.md).
+
 ### ❌ Explicit Non-Goals
 To keep the project focused, we will **NOT** build:
 * **No "SaaS-in-a-Box":** We will not build billing engines, payment gateways, or multi-tier subscription logic into the core. Gojinn is an engine, not a storefront.

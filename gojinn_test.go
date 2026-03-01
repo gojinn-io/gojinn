@@ -55,8 +55,11 @@ func TestProvision_FullLifecycle(t *testing.T) {
 	assert.NotNil(t, r.natsConn, "NATS Connection should be active")
 	assert.Equal(t, "CONNECTED", r.natsConn.Status().String())
 
+	err = r.EnsureTenantWorkers("test-tenant")
+	assert.NoError(t, err)
+
 	r.subsMu.Lock()
-	numSubs := len(r.subs)
+	numSubs := len(r.tenantSubs["test-tenant"])
 	r.subsMu.Unlock()
 	assert.Equal(t, 2, numSubs, "Should have exactly 2 NATS subscriptions (workers)")
 
@@ -78,8 +81,11 @@ func TestProvision_DefaultPoolSize(t *testing.T) {
 	err := r.Provision(ctx)
 	assert.NoError(t, err)
 
+	err = r.EnsureTenantWorkers("test-tenant")
+	assert.NoError(t, err)
+
 	r.subsMu.Lock()
-	numSubs := len(r.subs)
+	numSubs := len(r.tenantSubs["test-tenant"])
 	r.subsMu.Unlock()
 	assert.Equal(t, 2, numSubs, "Default pool size should be 2")
 
@@ -88,7 +94,7 @@ func TestProvision_DefaultPoolSize(t *testing.T) {
 
 func TestProvision_FileNotFound(t *testing.T) {
 	r := &Gojinn{
-		Path: "./arquivo_fantasma.wasm",
+		Path: "./ghost_file.wasm",
 	}
 
 	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
@@ -114,8 +120,11 @@ func TestProvision_GracefulInvalidConfig(t *testing.T) {
 	err := r.Provision(ctx)
 	assert.NoError(t, err)
 
+	err = r.EnsureTenantWorkers("test-tenant")
+	assert.NoError(t, err)
+
 	r.subsMu.Lock()
-	numSubs := len(r.subs)
+	numSubs := len(r.tenantSubs["test-tenant"])
 	r.subsMu.Unlock()
 	assert.Equal(t, 1, numSubs)
 

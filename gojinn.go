@@ -13,6 +13,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/coder/websocket"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"github.com/getsentry/sentry-go"
 	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
 	"github.com/robfig/cron/v3"
@@ -134,6 +135,8 @@ type Gojinn struct {
 
 	ServerName string `json:"server_name,omitempty"`
 
+	SentryDSN string `json:"sentry_dsn,omitempty"`
+
 	LeafRemotes []string `json:"leaf_remotes,omitempty"`
 	LeafPort    int      `json:"leaf_port,omitempty"`
 }
@@ -148,6 +151,18 @@ func (*Gojinn) CaddyModule() caddy.ModuleInfo {
 func (r *Gojinn) Provision(ctx caddy.Context) error {
 	r.logger = ctx.Logger()
 	r.tenantSubs = make(map[string][]*nats.Subscription)
+
+	if r.SentryDSN != "" {
+		errSentry := sentry.Init(sentry.ClientOptions{
+			Dsn:              r.SentryDSN,
+			TracesSampleRate: 1.0,
+		})
+		if errSentry != nil {
+			r.logger.Warn("Sentry initialization failed", zap.Error(errSentry))
+		} else {
+			r.logger.Info("Sentry integration enabled", zap.String("dsn", "configured"))
+		}
+	}
 
 	shutdown, err := setupTelemetry("gojinn-" + r.ClusterName)
 	if err != nil {
@@ -289,17 +304,18 @@ func (r *Gojinn) EnsureTenantWorkers(tenantID string) error {
 }
 
 func (r *Gojinn) Cleanup() error {
+	if r.SentryDSN != "" {
+		sentry.Flush(2 * time.Second)
+	}
 	if r.natsConn != nil {
 		if err := r.natsConn.Drain(); err != nil {
 			r.logger.Warn("NATS Drain error", zap.Error(err))
 		}
 		r.natsConn.Close()
 	}
-
 	if r.natsServer != nil {
 		r.natsServer.Shutdown()
 	}
-
 	if r.mqttClient != nil && r.mqttClient.IsConnected() {
 		r.mqttClient.Disconnect(250)
 	}
