@@ -1,4 +1,4 @@
-module github.com/pauloappbr/gojinn
+module github.com/gojinn-io/gojinn
 
 go 1.25
 
