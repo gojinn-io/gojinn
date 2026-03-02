@@ -161,6 +161,21 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 		return err
 	}
 
+	_, err = r.EnsureTenantResources(tenantID)
+	if err != nil {
+		r.logger.Error("Failed to provision tenant resources", zap.Error(err))
+		return caddyhttp.Error(http.StatusInternalServerError, fmt.Errorf("infrastructure failure: %v", err))
+	}
+
+	if r.js != nil {
+		tenantKV, kvErr := r.js.KeyValue("STATE_" + tenantID)
+		if kvErr == nil {
+			r.kv = tenantKV
+		} else {
+			r.logger.Warn("Failed to bind tenant KV store", zap.Error(kvErr))
+		}
+	}
+
 	if r.metrics != nil {
 		r.metrics.active.WithLabelValues(r.Path).Inc()
 		defer r.metrics.active.WithLabelValues(r.Path).Dec()
@@ -216,11 +231,6 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 
 	if r.js == nil {
 		return caddyhttp.Error(http.StatusServiceUnavailable, fmt.Errorf("JetStream not ready"))
-	}
-	_, err = r.EnsureTenantResources(tenantID)
-	if err != nil {
-		r.logger.Error("Failed to provision tenant resources", zap.Error(err))
-		return caddyhttp.Error(http.StatusInternalServerError, fmt.Errorf("infrastructure failure: %v", err))
 	}
 
 	_ = r.EnsureTenantWorkers(tenantID)
