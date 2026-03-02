@@ -182,6 +182,38 @@ func (r *Gojinn) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddy
 	}
 	inputJSON, _ := json.Marshal(reqPayload)
 
+	isAsync := req.Header.Get("X-Gojinn-Async") == "true"
+
+	if !isAsync {
+		stdout, err := r.runSyncJob(req.Context(), r.Path, string(inputJSON))
+		if err != nil {
+			r.logger.Error("Sync execution failed", zap.Error(err))
+			return caddyhttp.Error(http.StatusInternalServerError, err)
+		}
+
+		var sdkResp struct {
+			Status  int                 `json:"status"`
+			Headers map[string][]string `json:"headers"`
+			Body    string              `json:"body"`
+		}
+
+		rw.Header().Set("X-Powered-By", "Gojinn Sovereign Cloud")
+
+		if err := json.Unmarshal([]byte(stdout), &sdkResp); err == nil && sdkResp.Status != 0 {
+			for k, v := range sdkResp.Headers {
+				for _, val := range v {
+					rw.Header().Add(k, val)
+				}
+			}
+			rw.WriteHeader(sdkResp.Status)
+			rw.Write([]byte(sdkResp.Body))
+		} else {
+			rw.WriteHeader(http.StatusOK)
+			rw.Write([]byte(stdout))
+		}
+		return nil
+	}
+
 	if r.js == nil {
 		return caddyhttp.Error(http.StatusServiceUnavailable, fmt.Errorf("JetStream not ready"))
 	}
@@ -231,7 +263,7 @@ func (r *Gojinn) extractTenantAndHandleMiddleware(rw http.ResponseWriter, req *h
 		if allowed {
 			rw.Header().Set("Access-Control-Allow-Origin", origin)
 			rw.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
-			rw.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, X-Gojinn-Debug, traceparent")
+			rw.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, X-Gojinn-Debug, traceparent, X-Gojinn-Async")
 			rw.Header().Set("Access-Control-Allow-Credentials", "true")
 		}
 		if req.Method == "OPTIONS" {

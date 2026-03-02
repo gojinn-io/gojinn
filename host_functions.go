@@ -3,6 +3,8 @@ package gojinn
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -483,6 +485,50 @@ func (r *Gojinn) buildHostModule(ctx context.Context, engine wazero.Runtime) err
 			}
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{}).
 		Export("host_ws_write").
+		NewFunctionBuilder().
+		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
+			//nolint:gosec
+			urlPtr := uint32(stack[0])
+			//nolint:gosec
+			urlLen := uint32(stack[1])
+			//nolint:gosec
+			outPtr := uint32(stack[2])
+			//nolint:gosec
+			outMaxLen := uint32(stack[3])
+
+			uBytes, ok := mod.Memory().Read(urlPtr, urlLen)
+			if !ok {
+				stack[0] = 0
+				return
+			}
+			urlStr := string(uBytes)
+
+			resp, err := http.Get(urlStr)
+			if err != nil {
+				r.logger.Error("Host HTTP Get failed", zap.Error(err))
+				stack[0] = 0
+				return
+			}
+			defer resp.Body.Close()
+
+			bodyBytes, _ := io.ReadAll(resp.Body)
+
+			//nolint:gosec
+			bytesToWrite := uint32(len(bodyBytes))
+
+			if bytesToWrite > outMaxLen {
+				bytesToWrite = outMaxLen
+				bodyBytes = bodyBytes[:bytesToWrite]
+			}
+
+			if !mod.Memory().Write(outPtr, bodyBytes) {
+				stack[0] = 0
+				return
+			}
+
+			stack[0] = uint64(bytesToWrite)
+		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI64}).
+		Export("host_http_get").
 		Instantiate(ctx)
 
 	return err
