@@ -5,7 +5,7 @@ import (
 
 	_ "github.com/caddyserver/caddy/v2/modules/standard"
 
-	_ "github.com/pauloappbr/gojinn"
+	_ "github.com/gojinn-io/gojinn"
 
 	"github.com/spf13/cobra"
 )

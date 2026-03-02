@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/pauloappbr/gojinn/pkg/sovereign"
+	"github.com/gojinn-io/gojinn/pkg/sovereign"
 	"github.com/spf13/cobra"
 )
 

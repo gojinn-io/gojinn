@@ -10,7 +10,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/pauloappbr/gojinn/pkg/sovereign"
+	"github.com/gojinn-io/gojinn/pkg/sovereign"
 )
 
 func (g *Gojinn) loadWasmSecurely(path string) ([]byte, error) {

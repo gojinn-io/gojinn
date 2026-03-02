@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/pauloappbr/gojinn/pkg/sovereign"
+	"github.com/gojinn-io/gojinn/pkg/sovereign"
 )
 
 func main() {
