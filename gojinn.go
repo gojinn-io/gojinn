@@ -14,6 +14,7 @@ import (
 	"github.com/coder/websocket"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/getsentry/sentry-go"
+	"github.com/gojinn-io/gojinn/pkg/blob"
 	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
 	"github.com/robfig/cron/v3"
@@ -90,11 +91,7 @@ type Gojinn struct {
 	logger  *zap.Logger
 	metrics *gojinnMetrics
 
-	S3Endpoint  string `json:"s3_endpoint,omitempty"`
-	S3Region    string `json:"s3_region,omitempty"`
-	S3Bucket    string `json:"s3_bucket,omitempty"`
-	S3AccessKey string `json:"s3_access_key,omitempty"`
-	S3SecretKey string `json:"s3_secret_key,omitempty"`
+	Storage blob.Provider
 
 	CronJobs  []CronJob `json:"cron_jobs,omitempty"`
 	scheduler *cron.Cron

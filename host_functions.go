@@ -256,8 +256,8 @@ func (r *Gojinn) buildHostModule(ctx context.Context, engine wazero.Runtime) err
 			}
 			key := string(kBytes)
 
-			if !isAllowed(r.S3Bucket, r.Perms.S3Write) {
-				r.logger.Warn("Security Violation: Module tried to write to unauthorized S3 bucket", zap.String("bucket", r.S3Bucket))
+			if r.Storage == nil {
+				r.logger.Error("S3 storage provider not configured")
 				stack[0] = 1
 				return
 			}
@@ -268,7 +268,7 @@ func (r *Gojinn) buildHostModule(ctx context.Context, engine wazero.Runtime) err
 				return
 			}
 
-			err := r.s3Put(ctx, key, bBytes)
+			err := r.Storage.Put(ctx, key, bBytes)
 			if err != nil {
 				r.logger.Error("s3 put failed", zap.Error(err))
 				stack[0] = 1
@@ -295,13 +295,13 @@ func (r *Gojinn) buildHostModule(ctx context.Context, engine wazero.Runtime) err
 			}
 			key := string(kBytes)
 
-			if !isAllowed(r.S3Bucket, r.Perms.S3Read) {
-				r.logger.Warn("Security Violation: Module tried to read from unauthorized S3 bucket", zap.String("bucket", r.S3Bucket))
+			if r.Storage == nil {
+				r.logger.Error("S3 storage provider not configured")
 				stack[0] = 0
 				return
 			}
 
-			valBytes, err := r.s3Get(ctx, key)
+			valBytes, err := r.Storage.Get(ctx, key)
 			if err != nil {
 				r.logger.Error("s3 get failed", zap.Error(err))
 				stack[0] = 0

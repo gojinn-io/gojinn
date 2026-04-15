@@ -6,6 +6,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/gojinn-io/gojinn/pkg/blob/s3"
 )
 
 type CronJob struct {
@@ -35,6 +36,8 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	m.RateLimit = 0
 	m.RateBurst = 0
 	m.CrashPath = "./crashes"
+
+	var s3Bucket, s3Region, s3AccessKey, s3SecretKey, s3Endpoint string
 
 	for h.Next() {
 		args := h.RemainingArgs()
@@ -102,6 +105,26 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				if h.NextArg() {
 					m.DBDSN = h.Val()
 				}
+			case "s3_bucket":
+				if h.NextArg() {
+					s3Bucket = h.Val()
+				}
+			case "s3_region":
+				if h.NextArg() {
+					s3Region = h.Val()
+				}
+			case "s3_access_key":
+				if h.NextArg() {
+					s3AccessKey = h.Val()
+				}
+			case "s3_secret_key":
+				if h.NextArg() {
+					s3SecretKey = h.Val()
+				}
+			case "s3_endpoint":
+				if h.NextArg() {
+					s3Endpoint = h.Val()
+				}
 
 			case "db_sync_url":
 				if h.NextArg() {
@@ -110,27 +133,6 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			case "db_sync_token":
 				if h.NextArg() {
 					m.DBSyncToken = h.Val()
-				}
-
-			case "s3_endpoint":
-				if h.NextArg() {
-					m.S3Endpoint = h.Val()
-				}
-			case "s3_region":
-				if h.NextArg() {
-					m.S3Region = h.Val()
-				}
-			case "s3_bucket":
-				if h.NextArg() {
-					m.S3Bucket = h.Val()
-				}
-			case "s3_access_key":
-				if h.NextArg() {
-					m.S3AccessKey = h.Val()
-				}
-			case "s3_secret_key":
-				if h.NextArg() {
-					m.S3SecretKey = h.Val()
 				}
 
 			case "permissions":
@@ -375,5 +377,16 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			}
 		}
 	}
+
+	if s3Bucket != "" {
+		m.Storage = s3.New(s3.Config{
+			Bucket:    s3Bucket,
+			Region:    s3Region,
+			AccessKey: s3AccessKey,
+			SecretKey: s3SecretKey,
+			Endpoint:  s3Endpoint,
+		})
+	}
+
 	return &m, nil
 }
