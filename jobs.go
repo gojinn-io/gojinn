@@ -13,15 +13,6 @@ import (
 	"go.uber.org/zap"
 )
 
-func (r *Gojinn) runBackgroundJob(wasmFile string) {
-	ctx, span := otel.Tracer("gojinn-scheduler").Start(context.Background(), "cron_trigger")
-	defer span.End()
-
-	cronPayload := `{"event_type": "cron", "source": "gojinn_scheduler"}`
-
-	r.runAsyncJob(ctx, wasmFile, cronPayload)
-}
-
 func (r *Gojinn) runAsyncJob(ctx context.Context, wasmFile, payload string) {
 	tracer := otel.Tracer("gojinn-publisher")
 	ctx, span := tracer.Start(ctx, "publish_async_job")

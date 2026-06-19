@@ -1,14 +1,25 @@
 package main
 
 import (
+	"fmt"
+	"os"
+	"runtime/debug"
+
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 
 	_ "github.com/caddyserver/caddy/v2/modules/standard"
-
 	_ "github.com/gojinn-io/gojinn"
 
 	"github.com/spf13/cobra"
 )
+
+func getVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return "dev-build"
+}
 
 var rootCmd = &cobra.Command{
 	Use:   "gojinn",
@@ -18,6 +29,11 @@ It replaces the complexity of AWS Lambda + K8s with a single binary.`,
 }
 
 func main() {
+	if len(os.Args) == 2 && (os.Args[1] == "--version" || os.Args[1] == "-v" || os.Args[1] == "version") {
+		fmt.Printf("Gojinn: The Sovereign Serverless Cloud\nVersion: %s\n", getVersion())
+		os.Exit(0)
+	}
+
 	caddycmd.Main()
 }
 
@@ -49,7 +65,6 @@ func init() {
 		Short: "Build functions and start Cloud (Cobra Bridge)",
 		Func:  wrapCobra(upCmd),
 	})
-
 }
 
 func wrapCobra(cmd *cobra.Command) caddycmd.CommandFunc {

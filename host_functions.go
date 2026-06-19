@@ -2,6 +2,7 @@ package gojinn
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -488,24 +489,54 @@ func (r *Gojinn) buildHostModule(ctx context.Context, engine wazero.Runtime) err
 		NewFunctionBuilder().
 		WithGoModuleFunction(api.GoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
 			//nolint:gosec
-			urlPtr := uint32(stack[0])
+			reqJsonPtr := uint32(stack[0])
 			//nolint:gosec
-			urlLen := uint32(stack[1])
+			reqJsonLen := uint32(stack[1])
 			//nolint:gosec
 			outPtr := uint32(stack[2])
 			//nolint:gosec
 			outMaxLen := uint32(stack[3])
 
-			uBytes, ok := mod.Memory().Read(urlPtr, urlLen)
+			reqBytes, ok := mod.Memory().Read(reqJsonPtr, reqJsonLen)
 			if !ok {
+				r.logger.Error("Failed to read HTTP request JSON from memory")
 				stack[0] = 0
 				return
 			}
-			urlStr := string(uBytes)
 
-			resp, err := http.Get(urlStr)
+			type WasmHTTPRequest struct {
+				Method  string            `json:"method"`
+				URL     string            `json:"url"`
+				Headers map[string]string `json:"headers"`
+				Body    string            `json:"body"`
+			}
+
+			var wReq WasmHTTPRequest
+			if err := json.Unmarshal(reqBytes, &wReq); err != nil {
+				r.logger.Error("Failed to parse HTTP request JSON", zap.Error(err))
+				stack[0] = 0
+				return
+			}
+
+			var bodyReader io.Reader
+			if wReq.Body != "" {
+				bodyReader = strings.NewReader(wReq.Body)
+			}
+
+			httpReq, err := http.NewRequestWithContext(ctx, wReq.Method, wReq.URL, bodyReader)
 			if err != nil {
-				r.logger.Error("Host HTTP Get failed", zap.Error(err))
+				r.logger.Error("Failed to create HTTP request", zap.Error(err))
+				stack[0] = 0
+				return
+			}
+
+			for k, v := range wReq.Headers {
+				httpReq.Header.Set(k, v)
+			}
+
+			resp, err := http.DefaultClient.Do(httpReq)
+			if err != nil {
+				r.logger.Error("Host HTTP Request failed", zap.Error(err))
 				stack[0] = 0
 				return
 			}
@@ -528,7 +559,7 @@ func (r *Gojinn) buildHostModule(ctx context.Context, engine wazero.Runtime) err
 
 			stack[0] = uint64(bytesToWrite)
 		}), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI64}).
-		Export("host_http_get").
+		Export("host_http_request").
 		Instantiate(ctx)
 
 	return err
